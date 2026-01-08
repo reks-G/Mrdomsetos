@@ -1335,10 +1335,10 @@ function init() {
         
         // Reset to first tab
         $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
-        $('.server-settings-tab[data-panel="profile"]').classList.add('active');
+        $('.server-settings-tab[data-panel="profile"]')?.classList.add('active');
         $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
-        $('#panel-profile').classList.add('active');
-        $('.server-settings-header h2').textContent = 'Профиль сервера';
+        $('#panel-profile')?.classList.add('active');
+        $('.server-settings-header h2')?.textContent = 'Профиль сервера';
         
         openModal('server-settings-modal');
       } else if (action === 'leave') {
@@ -1387,7 +1387,7 @@ function init() {
       $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
       $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
-      $(`#panel-${tab.dataset.panel}`).classList.add('active');
+      $(`#panel-${tab.dataset.panel}`)?.classList.add('active');
       
       // Update header
       const titles = {
@@ -1397,7 +1397,7 @@ function init() {
         bans: 'Баны',
         members: 'Участники'
       };
-      $('.server-settings-header h2').textContent = titles[tab.dataset.panel] || 'Настройки';
+      $('.server-settings-header h2')?.textContent = titles[tab.dataset.panel] || 'Настройки';
       
       // Load data for panel
       if (tab.dataset.panel === 'members') loadServerMembers();
