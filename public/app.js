@@ -1379,18 +1379,24 @@ function init() {
   }
   
   // Profile modal buttons
-  $('#profile-message-btn').onclick = () => {
-    if (state.profileUser) {
-      openDM(state.profileUser);
-      closeModal('profile-modal');
-    }
-  };
+  const profileMsgBtn = $('#profile-message-btn');
+  if (profileMsgBtn) {
+    profileMsgBtn.onclick = () => {
+      if (state.profileUser) {
+        openDM(state.profileUser);
+        closeModal('profile-modal');
+      }
+    };
+  }
   
-  $('#profile-friend-btn').onclick = () => {
-    if (state.profileUser) {
-      send({ type: 'friend_request', to: state.profileUser });
-    }
-  };
+  const profileFriendBtn = $('#profile-friend-btn');
+  if (profileFriendBtn) {
+    profileFriendBtn.onclick = () => {
+      if (state.profileUser) {
+        send({ type: 'friend_request', to: state.profileUser });
+      }
+    };
+  }
   
   // Server settings tabs
   $$('.server-settings-tab[data-panel]').forEach(tab => {
