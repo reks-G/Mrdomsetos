@@ -59,7 +59,7 @@ function formatSize(b) {
 }
 
 function getStatus(s) {
-  return { online: 'Р’ СЃРµС‚Рё', idle: 'РќРµ Р°РєС‚РёРІРµРЅ', dnd: 'РќРµ Р±РµСЃРїРѕРєРѕРёС‚СЊ', invisible: 'РќРµРІРёРґРёРјС‹Р№', offline: 'РќРµ РІ СЃРµС‚Рё' }[s] || 'Р’ СЃРµС‚Рё';
+  return { online: 'В сети', idle: 'Не активен', dnd: 'Не беспокоить', invisible: 'Невидимый', offline: 'Не в сети' }[s] || 'В сети';
 }
 
 function displayStatus(s) {
@@ -465,7 +465,7 @@ async function handleCallSignal(from, signal) {
 
 function showIncomingCall(from, user, callType) {
   // Simple confirm for now
-  if (confirm(`${user?.name || 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ'} Р·РІРѕРЅРёС‚ РІР°Рј. РџСЂРёРЅСЏС‚СЊ?`)) {
+  if (confirm(`${user?.name || 'Пользователь'} звонит вам. Принять?`)) {
     acceptCall(from);
   } else {
     send({ type: 'call_reject', from });
@@ -518,8 +518,8 @@ function renderUsers() {
     else offline.push({ id, ...u, ds });
   });
   
-  $('#online-users').innerHTML = online.length ? online.map(userItemHTML).join('') : '<div class="empty">РќРµС‚ РґСЂСѓР·РµР№ РІ СЃРµС‚Рё</div>';
-  $('#all-users').innerHTML = state.friends.size ? [...state.friends.values()].map(u => userItemHTML({ ...u, ds: displayStatus(u.status || 'offline') })).join('') : '<div class="empty">РќРµС‚ РґСЂСѓР·РµР№</div>';
+  $('#online-users').innerHTML = online.length ? online.map(userItemHTML).join('') : '<div class="empty">Нет друзей в сети</div>';
+  $('#all-users').innerHTML = state.friends.size ? [...state.friends.values()].map(u => userItemHTML({ ...u, ds: displayStatus(u.status || 'offline') })).join('') : '<div class="empty">Нет друзей</div>';
   
   bindUserActions();
 }
@@ -533,13 +533,13 @@ function renderFriends() {
       <div class="avatar" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
       <div class="info">
         <div class="name">${escapeHtml(u.name)}</div>
-        <div class="status">РҐРѕС‡РµС‚ РґРѕР±Р°РІРёС‚СЊ РІР°СЃ РІ РґСЂСѓР·СЊСЏ</div>
+        <div class="status">Хочет добавить вас в друзья</div>
       </div>
       <div class="actions">
-        <button class="accept-btn" data-id="${u.id}" title="РџСЂРёРЅСЏС‚СЊ">
+        <button class="accept-btn" data-id="${u.id}" title="Принять">
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
         </button>
-        <button class="reject-btn" data-id="${u.id}" title="РћС‚РєР»РѕРЅРёС‚СЊ">
+        <button class="reject-btn" data-id="${u.id}" title="Отклонить">
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
         </button>
       </div>
@@ -548,7 +548,7 @@ function renderFriends() {
   
   const requestsContainer = $('#friend-requests');
   if (requestsContainer) {
-    requestsContainer.innerHTML = requestsHTML || '<div class="empty">РќРµС‚ Р·Р°СЏРІРѕРє</div>';
+    requestsContainer.innerHTML = requestsHTML || '<div class="empty">Нет заявок</div>';
     $$('.accept-btn').forEach(btn => {
       btn.onclick = () => send({ type: 'friend_accept', from: btn.dataset.id });
     });
@@ -567,7 +567,7 @@ function userItemHTML(u) {
         <div class="status">${getStatus(u.ds)}</div>
       </div>
       <div class="actions">
-        <button class="msg-btn" data-id="${u.id}" title="РЎРѕРѕР±С‰РµРЅРёРµ">
+        <button class="msg-btn" data-id="${u.id}" title="Сообщение">
           <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
         </button>
       </div>
@@ -852,8 +852,8 @@ function openChannel(channelId) {
   const server = state.servers.get(state.currentServer);
   const channel = server?.channels?.find(c => c.id === channelId);
   
-  $('#channel-name').textContent = channel?.name || 'РєР°РЅР°Р»';
-  $('#msg-input').placeholder = `РќР°РїРёСЃР°С‚СЊ РІ #${channel?.name || 'РєР°РЅР°Р»'}`;
+  $('#channel-name').textContent = channel?.name || 'канал';
+  $('#msg-input').placeholder = `Написать в #${channel?.name || 'канал'}`;
   
   renderChannels();
   showView('chat-view');
@@ -866,7 +866,7 @@ function openDM(oderId) {
   state.currentServer = null;
   
   const user = state.users.get(oderId);
-  const name = user?.name || 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ';
+  const name = user?.name || 'Пользователь';
   
   $('#dm-header-name').textContent = name;
   setAvatar($('#dm-header-avatar'), user?.avatar, name);
@@ -874,7 +874,7 @@ function openDM(oderId) {
   $('#dm-username').textContent = name.toLowerCase().replace(/\s/g, '');
   $('#dm-name-hint').textContent = name;
   setAvatar($('#dm-avatar'), user?.avatar, name);
-  $('#dm-input').placeholder = `РќР°РїРёСЃР°С‚СЊ @${name}`;
+  $('#dm-input').placeholder = `Написать @${name}`;
   
   $$('.server-btn').forEach(b => b.classList.remove('active'));
   $('.home-btn').classList.add('active');
@@ -899,7 +899,7 @@ async function joinVoice(channelId) {
   
   const server = state.servers.get(state.currentServer);
   const channel = server?.voiceChannels?.find(v => v.id === channelId);
-  $('#voice-name').textContent = channel?.name || 'Р“РѕР»РѕСЃРѕРІРѕР№';
+  $('#voice-name').textContent = channel?.name || 'Голосовой';
   
   startVoiceActivityDetection();
   renderChannels();
@@ -971,7 +971,7 @@ function downloadFile(name, data) {
 
 function showTyping(name) {
   const el = $('#typing');
-  el.textContent = `${name} РїРµС‡Р°С‚Р°РµС‚...`;
+  el.textContent = `${name} печатает...`;
   clearTimeout(el.timeout);
   el.timeout = setTimeout(() => el.textContent = '', 3000);
 }
@@ -1045,11 +1045,11 @@ function showUserProfile(oderId) {
   
   // Set joined date
   const joinedDate = user.createdAt ? new Date(user.createdAt) : new Date();
-  $('#profile-joined').textContent = joinedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) + ' Рі.';
+  $('#profile-joined').textContent = joinedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) + ' г.';
   
   // Check if already friends
   const isFriend = state.friends.has(oderId);
-  $('#profile-friend-text').textContent = isFriend ? 'Р’ РґСЂСѓР·СЊСЏС…' : 'Р”РѕР±Р°РІРёС‚СЊ';
+  $('#profile-friend-text').textContent = isFriend ? 'В друзьях' : 'Добавить';
   $('#profile-friend-btn').disabled = isFriend;
   
   openModal('profile-modal');
@@ -1073,24 +1073,24 @@ function loadServerMembers() {
       <div class="avatar" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
       <div class="member-manage-info">
         <div class="name">${escapeHtml(m.name)}</div>
-        <div class="role">${m.id === server.ownerId ? 'Р’Р»Р°РґРµР»РµС†' : 'РЈС‡Р°СЃС‚РЅРёРє'}</div>
+        <div class="role">${m.id === server.ownerId ? 'Владелец' : 'Участник'}</div>
       </div>
       <div class="member-manage-actions">
         ${m.id !== server.ownerId && server.ownerId === state.userId ? `
           <select class="role-select" data-member="${m.id}">
-            <option value="">Р‘РµР· СЂРѕР»Рё</option>
+            <option value="">Без роли</option>
             ${roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
           </select>
-          <button class="btn small danger kick-member-btn" data-id="${m.id}">Р’С‹РіРЅР°С‚СЊ</button>
+          <button class="btn small danger kick-member-btn" data-id="${m.id}">Выгнать</button>
         ` : ''}
       </div>
     </div>
-  `).join('') || '<div class="empty">РќРµС‚ СѓС‡Р°СЃС‚РЅРёРєРѕРІ</div>';
+  `).join('') || '<div class="empty">Нет участников</div>';
   
   // Bind kick buttons
   $$('.kick-member-btn').forEach(btn => {
     btn.onclick = () => {
-      if (confirm('Р’С‹РіРЅР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ?')) {
+      if (confirm('Выгнать пользователя?')) {
         send({ type: 'kick_member', serverId: state.contextServer, memberId: btn.dataset.id });
       }
     };
@@ -1108,10 +1108,10 @@ function loadServerRoles() {
       <div class="role-color" style="background: ${r.color}"></div>
       <div class="role-name">${escapeHtml(r.name)}</div>
       <div class="role-actions">
-        <button class="delete-role-btn danger" data-id="${r.id}">РЈРґР°Р»РёС‚СЊ</button>
+        <button class="delete-role-btn danger" data-id="${r.id}">Удалить</button>
       </div>
     </div>
-  `).join('') || '<div class="empty">РќРµС‚ СЂРѕР»РµР№</div>';
+  `).join('') || '<div class="empty">Нет ролей</div>';
   
   // Bind delete buttons
   $$('.delete-role-btn').forEach(btn => {
@@ -1132,8 +1132,8 @@ async function loadAudioDevices() {
     const mics = devices.filter(d => d.kind === 'audioinput');
     const speakers = devices.filter(d => d.kind === 'audiooutput');
     
-    $('#mic-select').innerHTML = mics.map(d => `<option value="${d.deviceId}">${d.label || 'РњРёРєСЂРѕС„РѕРЅ'}</option>`).join('');
-    $('#speaker-select').innerHTML = speakers.map(d => `<option value="${d.deviceId}">${d.label || 'Р”РёРЅР°РјРёРє'}</option>`).join('');
+    $('#mic-select').innerHTML = mics.map(d => `<option value="${d.deviceId}">${d.label || 'Микрофон'}</option>`).join('');
+    $('#speaker-select').innerHTML = speakers.map(d => `<option value="${d.deviceId}">${d.label || 'Динамик'}</option>`).join('');
     
     if (state.settings.micDevice) $('#mic-select').value = state.settings.micDevice;
     if (state.settings.speakerDevice) $('#speaker-select').value = state.settings.speakerDevice;
@@ -1149,9 +1149,9 @@ function init() {
   $('#login-btn').onclick = () => {
     const email = $('#login-email').value.trim();
     const pass = $('#login-pass').value;
-    if (!email || !pass) { $('#auth-error').textContent = 'Р—Р°РїРѕР»РЅРёС‚Рµ РІСЃРµ РїРѕР»СЏ'; return; }
+    if (!email || !pass) { $('#auth-error').textContent = 'Заполните все поля'; return; }
     if (!send({ type: 'login', email, password: pass })) {
-      $('#auth-error').textContent = 'РќРµС‚ СЃРѕРµРґРёРЅРµРЅРёСЏ СЃ СЃРµСЂРІРµСЂРѕРј';
+      $('#auth-error').textContent = 'Нет соединения с сервером';
     }
   };
   
@@ -1159,9 +1159,9 @@ function init() {
     const name = $('#reg-name').value.trim();
     const email = $('#reg-email').value.trim();
     const pass = $('#reg-pass').value;
-    if (!name || !email || !pass) { $('#auth-error').textContent = 'Р—Р°РїРѕР»РЅРёС‚Рµ РІСЃРµ РїРѕР»СЏ'; return; }
+    if (!name || !email || !pass) { $('#auth-error').textContent = 'Заполните все поля'; return; }
     if (!send({ type: 'register', name, email, password: pass })) {
-      $('#auth-error').textContent = 'РќРµС‚ СЃРѕРµРґРёРЅРµРЅРёСЏ СЃ СЃРµСЂРІРµСЂРѕРј';
+      $('#auth-error').textContent = 'Нет соединения с сервером';
     }
   };
   
@@ -1257,7 +1257,7 @@ function init() {
   };
   
   $('#save-profile').onclick = () => {
-    state.user.name = $('#settings-name').value.trim() || 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ';
+    state.user.name = $('#settings-name').value.trim() || 'Пользователь';
     state.user.status = $('#settings-status').value;
     send({ type: 'update_profile', name: state.user.name, avatar: state.user.avatar, status: state.user.status });
     updateUserPanel();
@@ -1327,7 +1327,7 @@ function init() {
       } else if (action === 'settings') {
         const server = state.servers.get(serverId);
         $('#edit-server-name').value = server?.name || '';
-        $('#preview-server-name').textContent = server?.name || 'РЎРµСЂРІРµСЂ';
+        $('#preview-server-name').textContent = server?.name || 'Сервер';
         setAvatar($('#edit-server-icon'), server?.icon, server?.name);
         state.editServerIcon = server?.icon;
         state.editServerBanner = server?.banner || '#5f27cd';
@@ -1338,7 +1338,7 @@ function init() {
         $('.server-settings-tab[data-panel="profile"]')?.classList.add('active');
         $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
         $('#panel-profile')?.classList.add('active');
-        $('.server-settings-header h2')?.textContent = 'РџСЂРѕС„РёР»СЊ СЃРµСЂРІРµСЂР°';
+        const hdrProf = $('.server-settings-header h2'); if (hdrProf) hdrProf.textContent = 'рофиль сервера';
         
         openModal('server-settings-modal');
       } else if (action === 'leave') {
@@ -1359,7 +1359,7 @@ function init() {
       } else if (action === 'message') {
         openDM(memberId);
       } else if (action === 'kick') {
-        if (confirm('Р’С‹РіРЅР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СЃ СЃРµСЂРІРµСЂР°?')) {
+        if (confirm('Выгнать пользователя с сервера?')) {
           send({ type: 'kick_member', serverId: state.currentServer, memberId });
         }
       }
@@ -1391,13 +1391,13 @@ function init() {
       
       // Update header
       const titles = {
-        profile: 'РџСЂРѕС„РёР»СЊ СЃРµСЂРІРµСЂР°',
-        roles: 'Р РѕР»Рё',
-        invites: 'РџСЂРёРіР»Р°С€РµРЅРёСЏ',
-        bans: 'Р‘Р°РЅС‹',
-        members: 'РЈС‡Р°СЃС‚РЅРёРєРё'
+        profile: 'Профиль сервера',
+        roles: 'Роли',
+        invites: 'Приглашения',
+        bans: 'Баны',
+        members: 'Участники'
       };
-      $('.server-settings-header h2')?.textContent = titles[tab.dataset.panel] || 'РќР°СЃС‚СЂРѕР№РєРё';
+      const hdr2 = $('.server-settings-header h2'); if (hdr2) hdr2.textContent = titles[tab.dataset.panel] || 'астройки';
       
       // Load data for panel
       if (tab.dataset.panel === 'members') loadServerMembers();
@@ -1431,7 +1431,7 @@ function init() {
   
   // Update preview on name change
   $('#edit-server-name').oninput = e => {
-    $('#preview-server-name').textContent = e.target.value || 'РЎРµСЂРІРµСЂ';
+    $('#preview-server-name').textContent = e.target.value || 'Сервер';
   };
   
   $('#save-server-btn').onclick = () => {
@@ -1442,7 +1442,7 @@ function init() {
   
   // Delete server
   $('#delete-server-btn').onclick = () => {
-    if (confirm('Р’С‹ СѓРІРµСЂРµРЅС‹ С‡С‚Рѕ С…РѕС‚РёС‚Рµ СѓРґР°Р»РёС‚СЊ СЃРµСЂРІРµСЂ? Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµР»СЊР·СЏ РѕС‚РјРµРЅРёС‚СЊ.')) {
+    if (confirm('Вы уверены что хотите удалить сервер? Это действие нельзя отменить.')) {
       send({ type: 'delete_server', serverId: state.contextServer });
       closeModal('server-settings-modal');
     }
@@ -1475,8 +1475,8 @@ function init() {
   // Invite
   $('#copy-invite').onclick = () => {
     navigator.clipboard.writeText($('#invite-code-display').value);
-    $('#copy-invite').textContent = 'РЎРєРѕРїРёСЂРѕРІР°РЅРѕ!';
-    setTimeout(() => $('#copy-invite').textContent = 'РљРѕРїРёСЂРѕРІР°С‚СЊ', 2000);
+    $('#copy-invite').textContent = 'Скопировано!';
+    setTimeout(() => $('#copy-invite').textContent = 'Копировать', 2000);
   };
   
   // Close modals
@@ -1490,7 +1490,7 @@ function init() {
     if (!name) return;
     send({ type: 'friend_request', name });
     $('#search-input').value = '';
-    $('#search-results').innerHTML = '<div class="empty">Р—Р°РїСЂРѕСЃ РѕС‚РїСЂР°РІР»РµРЅ!</div>';
+    $('#search-results').innerHTML = '<div class="empty">Запрос отправлен!</div>';
   };
   
   // DM Call buttons
