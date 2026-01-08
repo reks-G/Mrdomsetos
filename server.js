@@ -82,7 +82,7 @@ function getVoiceUsers(serverId, channelId) {
   voiceChannels.forEach((data, oderId) => {
     if (data.serverId === serverId && data.channelId === channelId) {
       const user = users.get(oderId);
-      if (user) result.push({ oderId, oderId, name: user.name, avatar: user.avatar, muted: data.muted, deafened: data.deafened });
+      if (user) result.push({ oderId, oderId, name: user.name, avatar: user.avatar, muted: data.muted, deafened: data.deafened, speaking: data.speaking || false });
     }
   });
   return result;
@@ -377,6 +377,15 @@ wss.on('connection', (ws) => {
           if (voiceData) {
             voiceData.muted = data.muted;
             broadcastToServer(voiceData.serverId, { type: 'voice_state_update', serverId: voiceData.serverId, channelId: voiceData.channelId, users: getVoiceUsers(voiceData.serverId, voiceData.channelId) });
+          }
+          break;
+        }
+
+        case 'voice_speaking': {
+          const voiceData = voiceChannels.get(userId);
+          if (voiceData) {
+            voiceData.speaking = data.speaking;
+            broadcastToServer(voiceData.serverId, { type: 'voice_speaking_update', oderId: oderId, oderId: oderId, speaking: data.speaking, channelId: voiceData.channelId });
           }
           break;
         }

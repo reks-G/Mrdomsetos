@@ -330,6 +330,14 @@ async function handleMessage(data) {
       await handleVoiceSignal(data.from, data.signal);
       break;
       
+    case 'voice_speaking_update':
+      // Update speaking animation for other users
+      const speakingAvatar = $(`.voice-user[data-user-id="${data.oderId}"] .avatar`);
+      if (speakingAvatar) {
+        speakingAvatar.classList.toggle('speaking', data.speaking);
+      }
+      break;
+      
     case 'call_incoming':
       showIncomingCall(data.from, data.user, data.callType);
       break;
@@ -727,11 +735,18 @@ function startVoiceActivityDetection() {
   source.connect(analyser);
   
   const dataArray = new Uint8Array(analyser.frequencyBinCount);
+  let wasSpeaking = false;
   
   speakingCheckInterval = setInterval(() => {
     analyser.getByteFrequencyData(dataArray);
     const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
     const isSpeaking = average > 15 && !state.micMuted;
+    
+    // Send speaking status to server if changed
+    if (isSpeaking !== wasSpeaking) {
+      wasSpeaking = isSpeaking;
+      send({ type: 'voice_speaking', speaking: isSpeaking });
+    }
     
     // Update local user's avatar
     const myAvatar = $(`.voice-user[data-user-id="${state.userId}"] .avatar`);
