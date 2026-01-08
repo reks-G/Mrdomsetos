@@ -251,7 +251,22 @@ wss.on('connection', (ws) => {
           delete srv.memberRoles[userId];
           
           ws.send(JSON.stringify({ type: 'server_left', serverId: data.serverId }));
-          broadcastToServer(data.serverId, { type: 'member_left', serverId: data.serverId, userId: userId });
+          broadcastToServer(data.serverId, { type: 'member_left', serverId: data.serverId, oderId: userId });
+          break;
+        }
+
+        case 'kick_member': {
+          const srv = servers.get(data.serverId);
+          if (!srv || srv.ownerId !== userId) return; // Only owner can kick
+          if (data.memberId === srv.ownerId) return; // Can't kick owner
+          
+          srv.members.delete(data.memberId);
+          delete srv.memberRoles[data.memberId];
+          
+          // Notify kicked user
+          sendTo(data.memberId, { type: 'server_left', serverId: data.serverId, kicked: true });
+          // Notify server members
+          broadcastToServer(data.serverId, { type: 'member_left', serverId: data.serverId, oderId: data.memberId, kicked: true });
           break;
         }
 

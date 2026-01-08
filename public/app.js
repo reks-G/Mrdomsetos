@@ -19,6 +19,7 @@ const state = {
   micMuted: false,
   soundMuted: false,
   contextServer: null,
+  contextMember: null,
   creatingVoice: false,
   localStream: null,
   peerConnections: new Map(),
@@ -643,7 +644,7 @@ function renderMembers() {
   const crownSVG = '<svg class="crown" viewBox="0 0 24 24"><path fill="#f1c40f" d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/></svg>';
   
   $('#members-online').innerHTML = online.map(m => `
-    <div class="member-item">
+    <div class="member-item" data-member-id="${m.id}">
       <div class="avatar online" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
       <span>${escapeHtml(m.name)}</span>
       ${m.isOwner ? crownSVG : ''}
@@ -651,12 +652,17 @@ function renderMembers() {
   `).join('');
   
   $('#members-offline').innerHTML = offline.map(m => `
-    <div class="member-item">
+    <div class="member-item" data-member-id="${m.id}">
       <div class="avatar offline" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
       <span>${escapeHtml(m.name)}</span>
       ${m.isOwner ? crownSVG : ''}
     </div>
   `).join('');
+  
+  // Add context menu handlers
+  $$('.member-item').forEach(el => {
+    el.oncontextmenu = e => showMemberContext(e, el.dataset.memberId);
+  });
 }
 
 function renderMessages() {
@@ -966,8 +972,29 @@ function showServerContext(e, serverId) {
   menu.classList.add('visible');
 }
 
+function showMemberContext(e, memberId) {
+  e.preventDefault();
+  if (memberId === state.userId) return; // Don't show menu for self
+  
+  state.contextMember = memberId;
+  const menu = $('#member-context');
+  const server = state.servers.get(state.currentServer);
+  const isOwner = server?.ownerId === state.userId;
+  const isMemberOwner = server?.ownerId === memberId;
+  
+  // Show kick button only if current user is owner and target is not owner
+  const showKick = isOwner && !isMemberOwner;
+  $('#member-kick-btn').style.display = showKick ? 'flex' : 'none';
+  $('#member-kick-divider').style.display = showKick ? 'block' : 'none';
+  
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('visible');
+}
+
 function hideContextMenu() {
   $('#server-context').classList.remove('visible');
+  $('#member-context').classList.remove('visible');
 }
 
 function openModal(id) { $(`#${id}`).classList.add('active'); }
@@ -1184,6 +1211,27 @@ function init() {
         openModal('server-settings-modal');
       } else if (action === 'leave') {
         send({ type: 'leave_server', serverId });
+      }
+      hideContextMenu();
+    };
+  });
+  
+  // Member context menu
+  $('#member-context').querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const action = btn.dataset.action;
+      const memberId = state.contextMember;
+      
+      if (action === 'profile') {
+        // Show profile modal (can be expanded later)
+        const user = state.users.get(memberId) || state.serverMembers.find(m => m.id === memberId);
+        if (user) alert(`Профиль: ${user.name}`);
+      } else if (action === 'message') {
+        openDM(memberId);
+      } else if (action === 'kick') {
+        if (confirm('Выгнать пользователя с сервера?')) {
+          send({ type: 'kick_member', serverId: state.currentServer, memberId });
+        }
       }
       hideContextMenu();
     };
