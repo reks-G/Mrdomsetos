@@ -1,186 +1,48 @@
-﻿// Config
-const WS_URL = 'https://discord-clone-ws.onrender.com';
-// const WS_URL = 'ws://localhost:3001';
+﻿// MrDomestos* - Discord Clone
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 
-// State
+const WS_URL = location.hostname === 'localhost' ? 'ws://localhost:3001' : 'wss://discord-clone-ws.onrender.com';
+
 const state = {
   ws: null,
   userId: null,
-  user: { name: '', avatar: null, status: 'online' },
-  settings: { theme: 'dark', micDevice: 'default', speakerDevice: 'default' },
-  users: new Map(),
+  username: null,
   servers: new Map(),
-  dmMessages: {},
+  friends: new Map(),
+  pendingRequests: [],
+  dms: new Map(),
   currentServer: null,
   currentChannel: null,
   currentDM: null,
-  voiceChannel: null,
-  voiceUsers: [],
-  micMuted: false,
-  soundMuted: false,
+  currentView: 'online',
   contextServer: null,
   contextMember: null,
   profileUser: null,
   creatingVoice: false,
+  editServerIcon: null,
+  editServerBanner: null,
+  voiceChannel: null,
+  voiceUsers: new Map(),
   localStream: null,
   peerConnections: new Map(),
-  inCall: false,
-  callTarget: null,
-  friends: new Map(),
-  friendRequests: [],
-  serverMembers: []
+  settings: {
+    theme: 'dark',
+    micDevice: null,
+    speakerDevice: null,
+    micVolume: 100,
+    speakerVolume: 100
+  }
 };
 
-// Utils
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
-const getInitial = n => n ? n[0].toUpperCase() : '?';
-
-function setAvatar(el, avatar, name) {
-  if (avatar) {
-    el.style.backgroundImage = `url(${avatar})`;
-    el.textContent = '';
-  } else {
-    el.style.backgroundImage = '';
-    el.textContent = getInitial(name);
-  }
-}
-
-function escapeHtml(t) {
-  const d = document.createElement('div');
-  d.textContent = t || '';
-  return d.innerHTML;
-}
-
-function formatSize(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-  return (b / 1048576).toFixed(1) + ' MB';
-}
-
-function getStatus(s) {
-  return { online: '� ����', idle: '�� �������', dnd: '�� ����������', invisible: '���������', offline: '�� � ����' }[s] || '� ����';
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function displayStatus(s) {
-  return s === 'invisible' ? 'offline' : s;
-}
-
-// WebRTC Config
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
-};
-
-async function getMediaStream(video = false) {
-  try {
-    const constraints = {
-      audio: { deviceId: state.settings.micDevice !== 'default' ? { exact: state.settings.micDevice } : undefined },
-      video: video
-    };
-    state.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    return state.localStream;
-  } catch (e) {
-    console.error('Media error:', e);
-    return null;
-  }
-}
-
-function createPeerConnection(oderId) {
-  const pc = new RTCPeerConnection(rtcConfig);
-  
-  pc.onicecandidate = e => {
-    if (e.candidate) {
-      send({ type: state.voiceChannel ? 'voice_signal' : 'call_signal', to: oderId, signal: { ice: e.candidate } });
-    }
-  };
-  
-  pc.ontrack = e => {
-    let audio = document.getElementById('remote-audio-' + oderId);
-    if (!audio) {
-      audio = document.createElement('audio');
-      audio.id = 'remote-audio-' + oderId;
-      audio.autoplay = true;
-      document.body.appendChild(audio);
-    }
-    audio.srcObject = e.streams[0];
-  };
-  
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(track => pc.addTrack(track, state.localStream));
-  }
-  
-  state.peerConnections.set(oderId, pc);
-  return pc;
-}
-
-async function startCall(oderId, video = false) {
-  state.inCall = true;
-  state.callTarget = oderId;
-  
-  await getMediaStream(video);
-  const pc = createPeerConnection(oderId);
-  
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  
-  send({ type: 'call_start', to: oderId, callType: video ? 'video' : 'audio' });
-  send({ type: 'call_signal', to: oderId, signal: { sdp: pc.localDescription } });
-}
-
-async function acceptCall(callerId) {
-  state.inCall = true;
-  state.callTarget = callerId;
-  
-  await getMediaStream(false);
-  send({ type: 'call_accept', from: callerId });
-}
-
-function endCall() {
-  if (state.callTarget) {
-    send({ type: 'call_end', to: state.callTarget });
-  }
-  cleanupCall();
-}
-
-function cleanupCall() {
-  state.peerConnections.forEach(pc => pc.close());
-  state.peerConnections.clear();
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(t => t.stop());
-    state.localStream = null;
-  }
-  state.inCall = false;
-  state.callTarget = null;
-  $$('audio[id^="remote-audio"]').forEach(a => a.remove());
-}
-
-
-// WebSocket
-function connect() {
-  state.ws = new WebSocket(WS_URL);
-  
-  state.ws.onopen = () => {
-    console.log('Connected');
-    const err = $('#auth-error');
-    if (err) err.textContent = '';
-  };
-  
-  state.ws.onmessage = e => {
-    try {
-      handleMessage(JSON.parse(e.data));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-  
-  state.ws.onclose = () => {
-    console.log('Disconnected, reconnecting...');
-    setTimeout(connect, 3000);
-  };
-  state.ws.onerror = err => console.error('WS Error:', err);
+  return { online: 'В сети', idle: 'Не активен', dnd: 'Не беспокоить', invisible: 'Невидимый', offline: 'Не в сети' }[s] || 'В сети';
 }
 
 function send(data) {
@@ -191,384 +53,385 @@ function send(data) {
   return false;
 }
 
-async function handleMessage(data) {
-  console.log('MSG:', data.type);
+function connect() {
+  state.ws = new WebSocket(WS_URL);
   
-  switch (data.type) {
-    case 'auth_error':
-      $('#auth-error').textContent = data.message;
-      break;
-      
+  state.ws.onopen = () => console.log('Connected');
+  state.ws.onclose = () => setTimeout(connect, 3000);
+  state.ws.onerror = e => console.error('WS Error:', e);
+  state.ws.onmessage = e => handleMessage(JSON.parse(e.data));
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
     case 'auth_success':
-      state.userId = data.userId;
-      state.user = data.user;
-      state.settings = data.settings || state.settings;
-      
-      Object.entries(data.servers || {}).forEach(([id, s]) => state.servers.set(id, s));
-      (data.users || []).forEach(u => state.users.set(u.id, u));
-      
+      state.userId = msg.userId;
+      state.username = msg.username;
       closeModal('auth-modal');
-      applyTheme(state.settings.theme);
-      renderAll();
-      
-      // Load friends
-      send({ type: 'get_friends' });
+      if (msg.servers) msg.servers.forEach(s => state.servers.set(s.id, s));
+      if (msg.friends) msg.friends.forEach(f => state.friends.set(f.id, f));
+      if (msg.pendingRequests) state.pendingRequests = msg.pendingRequests;
+      if (msg.dms) msg.dms.forEach(d => state.dms.set(d.oderId, d));
+      renderServers();
+      renderFriends();
+      loadAudioDevices();
       break;
       
-    case 'user_join':
-      state.users.set(data.user.id, data.user);
-      renderUsers();
-      renderMembers();
-      break;
-      
-    case 'user_leave':
-      state.users.delete(data.userId);
-      renderUsers();
-      renderMembers();
-      break;
-      
-    case 'user_update':
-      state.users.set(data.user.id, data.user);
-      renderUsers();
-      renderMembers();
-      renderDMList();
-      break;
-      
-    case 'message':
-      const srv = state.servers.get(data.serverId);
-      if (srv) {
-        if (!srv.messages[data.channel]) srv.messages[data.channel] = [];
-        srv.messages[data.channel].push(data.message);
-        if (state.currentServer === data.serverId && state.currentChannel === data.channel) {
-          renderMessages();
-        }
-      }
-      break;
-      
-    case 'dm':
-      if (!state.dmMessages[data.message.from]) state.dmMessages[data.message.from] = [];
-      state.dmMessages[data.message.from].push(data.message);
-      if (state.currentDM === data.message.from) renderDMMessages();
-      renderDMList();
-      break;
-      
-    case 'dm_sent':
-      if (!state.dmMessages[data.to]) state.dmMessages[data.to] = [];
-      state.dmMessages[data.to].push(data.message);
-      if (state.currentDM === data.to) renderDMMessages();
+    case 'auth_error':
+      const authErr = $('#auth-error');
+      if (authErr) authErr.textContent = msg.message || 'Ошибка авторизации';
       break;
       
     case 'server_created':
-    case 'server_joined':
-      state.servers.set(data.server.id, data.server);
-      renderServers();
-      if (data.type === 'server_created') {
-        closeModal('create-server-modal');
-        switchToServer(data.server.id);
-      }
-      break;
-      
-    case 'server_left':
-      state.servers.delete(data.serverId);
-      renderServers();
-      switchToHome();
-      break;
-      
     case 'server_updated':
-      const s = state.servers.get(data.serverId);
-      if (s) {
-        s.name = data.name;
-        s.icon = data.icon;
-        s.banner = data.banner;
-        renderServers();
-        if (state.currentServer === data.serverId) $('#server-name').textContent = data.name;
-      }
-      closeModal('server-settings-modal');
+      state.servers.set(msg.server.id, msg.server);
+      renderServers();
+      if (state.currentServer === msg.server.id) renderChannels();
+      break;
+      
+    case 'server_joined':
+      state.servers.set(msg.server.id, msg.server);
+      renderServers();
       break;
       
     case 'server_deleted':
-      state.servers.delete(data.serverId);
-      renderServers();
-      if (state.currentServer === data.serverId) {
+    case 'kicked_from_server':
+      state.servers.delete(msg.serverId);
+      if (state.currentServer === msg.serverId) {
         state.currentServer = null;
-        switchToHome();
+        state.currentChannel = null;
+        showView('home-view');
       }
+      renderServers();
       break;
-      
-    case 'role_deleted':
-      const srvRole = state.servers.get(data.serverId);
-      if (srvRole) {
-        srvRole.roles = srvRole.roles.filter(r => r.id !== data.roleId);
-        loadServerRoles();
-      }
-      break;
-      
+
     case 'channel_created':
-      const serv = state.servers.get(data.serverId);
-      if (serv) {
-        if (data.isVoice) serv.voiceChannels.push(data.channel);
-        else {
-          serv.channels.push(data.channel);
-          serv.messages[data.channel.id] = [];
+    case 'channel_deleted':
+      const srv = state.servers.get(msg.serverId);
+      if (srv) {
+        if (msg.type === 'channel_created') {
+          srv.channels = srv.channels || [];
+          srv.channels.push(msg.channel);
+        } else {
+          srv.channels = srv.channels.filter(c => c.id !== msg.channelId);
         }
-        if (state.currentServer === data.serverId) renderChannels();
+        if (state.currentServer === msg.serverId) renderChannels();
       }
-      closeModal('channel-modal');
       break;
       
-    case 'invite_created':
-      $('#invite-code-display').value = data.code;
-      openModal('invite-modal');
+    case 'message':
+      if (msg.channelId && state.currentChannel === msg.channelId) {
+        appendMessage(msg);
+      } else if (msg.oderId) {
+        const dm = state.dms.get(msg.oderId) || { oderId: msg.oderId, messages: [] };
+        dm.messages = dm.messages || [];
+        dm.messages.push(msg);
+        state.dms.set(msg.oderId, dm);
+        if (state.currentDM === msg.oderId) appendMessage(msg, true);
+      }
       break;
       
-    case 'invite_error':
-      $('#invite-error').textContent = data.message;
-      break;
-      
-    case 'member_joined':
-      if (data.user) state.users.set(data.user.id, data.user);
-      renderMembers();
-      break;
-      
-    case 'member_left':
-      renderMembers();
-      break;
-      
-    case 'voice_state_update':
-      state.voiceUsers = data.users || [];
-      renderVoiceUsers();
-      renderVoiceInChannel(data.serverId, data.channelId);
-      // Connect to new voice users
-      for (const u of state.voiceUsers) {
-        if (u.oderId !== state.userId && !state.peerConnections.has(u.oderId)) {
-          await connectToVoiceUser(u.oderId);
+    case 'messages_history':
+      if (msg.channelId) {
+        const server = state.servers.get(state.currentServer);
+        if (server) {
+          const ch = server.channels?.find(c => c.id === msg.channelId);
+          if (ch) ch.messages = msg.messages;
         }
+        renderMessages();
+      } else if (msg.oderId) {
+        const dm = state.dms.get(msg.oderId) || { oderId: msg.oderId };
+        dm.messages = msg.messages;
+        state.dms.set(msg.oderId, dm);
+        renderDMMessages();
       }
       break;
       
-    case 'voice_signal':
-      await handleVoiceSignal(data.from, data.signal);
-      break;
-      
-    case 'voice_speaking_update':
-      // Update speaking animation for other users
-      const speakingAvatar = $(`.voice-user[data-user-id="${data.oderId}"] .avatar`);
-      if (speakingAvatar) {
-        speakingAvatar.classList.toggle('speaking', data.speaking);
-      }
-      break;
-      
-    case 'call_incoming':
-      showIncomingCall(data.from, data.user, data.callType);
-      break;
-      
-    case 'call_accepted':
-      console.log('Call accepted');
-      break;
-      
-    case 'call_rejected':
-      cleanupCall();
-      break;
-      
-    case 'call_ended':
-      cleanupCall();
-      break;
-      
-    case 'call_signal':
-      await handleCallSignal(data.from, data.signal);
-      break;
-      
-    case 'settings_updated':
-      state.settings = data.settings;
-      applyTheme(state.settings.theme);
-      break;
-      
-    case 'typing':
-      if (data.serverId === state.currentServer && data.channel === state.currentChannel) {
-        showTyping(data.name);
-      }
-      break;
-      
-    case 'friends_list':
-      state.friends.clear();
-      (data.friends || []).forEach(f => state.friends.set(f.id, f));
-      state.friendRequests = data.requests || [];
+    case 'friend_request_received':
+      state.pendingRequests.push(msg.from);
       renderFriends();
       break;
       
     case 'friend_added':
-      state.friends.set(data.user.id, data.user);
+      state.friends.set(msg.friend.id, msg.friend);
+      state.pendingRequests = state.pendingRequests.filter(r => r.id !== msg.friend.id);
       renderFriends();
       break;
       
     case 'friend_removed':
-      state.friends.delete(data.oderId);
+      state.friends.delete(msg.oderId);
       renderFriends();
       break;
       
-    case 'friend_request_incoming':
-      state.friendRequests.push(data.user);
-      renderFriends();
+    case 'friend_status':
+      const friend = state.friends.get(msg.oderId);
+      if (friend) {
+        friend.status = msg.status;
+        renderFriends();
+      }
       break;
       
-    case 'friend_error':
-      alert(data.message);
+    case 'invite_created':
+      const codeDisplay = $('#invite-code-display');
+      if (codeDisplay) codeDisplay.value = msg.code;
+      openModal('invite-modal');
       break;
       
-    case 'server_members':
-      state.serverMembers = data.members || [];
-      renderMembers();
+    case 'user_profile':
+      showUserProfileData(msg.user);
+      break;
+      
+    case 'typing':
+      showTyping(msg.userId, msg.username);
+      break;
+      
+    case 'voice_users':
+      state.voiceUsers = new Map(msg.users.map(u => [u.id, u]));
+      renderVoiceUsers();
+      break;
+      
+    case 'voice_signal':
+      handleVoiceSignal(msg);
+      break;
+      
+    case 'call_incoming':
+      handleIncomingCall(msg);
+      break;
+      
+    case 'error':
+      alert(msg.message || 'Произошла ошибка');
       break;
   }
 }
 
-async function connectToVoiceUser(oderId) {
-  const pc = createPeerConnection(oderId);
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  send({ type: 'voice_signal', to: oderId, signal: { sdp: pc.localDescription } });
+function showView(viewId) {
+  $$('.view').forEach(v => v.classList.remove('active'));
+  const view = $(`#${viewId}`);
+  if (view) view.classList.add('active');
 }
 
-async function handleVoiceSignal(from, signal) {
-  let pc = state.peerConnections.get(from);
-  if (!pc) pc = createPeerConnection(from);
-  
-  if (signal.sdp) {
-    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-    if (signal.sdp.type === 'offer') {
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      send({ type: 'voice_signal', to: from, signal: { sdp: pc.localDescription } });
-    }
-  }
-  if (signal.ice) {
-    await pc.addIceCandidate(new RTCIceCandidate(signal.ice));
-  }
+function openModal(id) {
+  const modal = $(`#${id}`);
+  if (modal) modal.classList.add('active');
 }
 
-async function handleCallSignal(from, signal) {
-  let pc = state.peerConnections.get(from);
-  if (!pc) pc = createPeerConnection(from);
-  
-  if (signal.sdp) {
-    await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-    if (signal.sdp.type === 'offer') {
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      send({ type: 'call_signal', to: from, signal: { sdp: pc.localDescription } });
-    }
-  }
-  if (signal.ice) {
-    await pc.addIceCandidate(new RTCIceCandidate(signal.ice));
-  }
+function closeModal(id) {
+  const modal = $(`#${id}`);
+  if (modal) modal.classList.remove('active');
 }
 
-function showIncomingCall(from, user, callType) {
-  // Simple confirm for now
-  if (confirm(`${user?.name || '������������'} ������ ���. �������?`)) {
-    acceptCall(from);
-  } else {
-    send({ type: 'call_reject', from });
-  }
+function hideContextMenu() {
+  const serverCtx = $('#server-context');
+  const memberCtx = $('#member-context');
+  if (serverCtx) serverCtx.classList.remove('active');
+  if (memberCtx) memberCtx.classList.remove('active');
 }
 
-
-// Render
-function renderAll() {
-  updateUserPanel();
-  renderServers();
-  renderUsers();
-  renderDMList();
-}
-
+// Render functions
 function renderServers() {
   const container = $('#servers-list');
-  container.querySelectorAll('.server-btn[data-server]').forEach(el => el.remove());
+  if (!container) return;
   
-  const addBtn = $('#add-server-btn');
-  state.servers.forEach((server, id) => {
-    // Show server if user is member
-    if (!server.isMember && !server.members?.includes(state.userId)) return;
-    
+  const homeBtn = container.querySelector('.home-btn');
+  const addBtn = container.querySelector('.add-server');
+  const divider = container.querySelector('.server-divider');
+  
+  container.querySelectorAll('.server-btn:not(.home-btn):not(.add-server)').forEach(el => el.remove());
+  
+  state.servers.forEach(server => {
     const btn = document.createElement('div');
-    btn.className = `server-btn ${state.currentServer === id ? 'active' : ''}`;
-    btn.dataset.server = id;
+    btn.className = 'server-btn';
+    btn.dataset.id = server.id;
     btn.title = server.name;
     
     if (server.icon) {
-      btn.style.backgroundImage = `url(${server.icon})`;
+      btn.innerHTML = `<img src="${server.icon}" alt="${escapeHtml(server.name)}">`;
     } else {
-      btn.textContent = getInitial(server.name);
+      btn.textContent = server.name.charAt(0).toUpperCase();
     }
     
-    btn.onclick = () => switchToServer(id);
-    btn.oncontextmenu = e => showServerContext(e, id);
+    btn.onclick = () => openServer(server.id);
+    btn.oncontextmenu = e => {
+      e.preventDefault();
+      state.contextServer = server.id;
+      showServerContext(e.clientX, e.clientY, server);
+    };
     
     container.insertBefore(btn, addBtn);
   });
 }
 
-function renderUsers() {
-  // Show only friends
-  const online = [], offline = [];
+
+function showServerContext(x, y, server) {
+  const ctx = $('#server-context');
+  if (!ctx) return;
   
-  state.friends.forEach((u, id) => {
-    const ds = displayStatus(u.status || 'offline');
-    if (ds !== 'offline') online.push({ id, ...u, ds });
-    else offline.push({ id, ...u, ds });
-  });
+  const kickBtn = ctx.querySelector('[data-action="kick"]');
+  if (kickBtn) kickBtn.style.display = server.ownerId === state.userId ? 'flex' : 'none';
   
-  $('#online-users').innerHTML = online.length ? online.map(userItemHTML).join('') : '<div class="empty">��� ������ � ����</div>';
-  $('#all-users').innerHTML = state.friends.size ? [...state.friends.values()].map(u => userItemHTML({ ...u, ds: displayStatus(u.status || 'offline') })).join('') : '<div class="empty">��� ������</div>';
-  
-  bindUserActions();
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('active');
 }
 
-function renderFriends() {
-  renderUsers();
+function renderChannels() {
+  const server = state.servers.get(state.currentServer);
+  if (!server) return;
   
-  // Render friend requests
-  const requestsHTML = state.friendRequests.map(u => `
-    <div class="user-item request" data-id="${u.id}">
-      <div class="avatar" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
-      <div class="info">
-        <div class="name">${escapeHtml(u.name)}</div>
-        <div class="status">����� �������� ��� � ������</div>
-      </div>
-      <div class="actions">
-        <button class="accept-btn" data-id="${u.id}" title="�������">
-          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-        </button>
-        <button class="reject-btn" data-id="${u.id}" title="���������">
-          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
+  const textList = $('#text-channels');
+  const voiceList = $('#voice-channels');
+  if (!textList || !voiceList) return;
+  
+  const textChannels = (server.channels || []).filter(c => !c.isVoice);
+  const voiceChannels = (server.channels || []).filter(c => c.isVoice);
+  
+  textList.innerHTML = textChannels.map(c => `
+    <div class="channel ${state.currentChannel === c.id ? 'active' : ''}" data-id="${c.id}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>
+      <span>${escapeHtml(c.name)}</span>
+    </div>
+  `).join('');
+  
+  voiceList.innerHTML = voiceChannels.map(c => `
+    <div class="channel voice ${state.voiceChannel === c.id ? 'active' : ''}" data-id="${c.id}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      <span>${escapeHtml(c.name)}</span>
+      ${state.voiceChannel === c.id ? '<div class="voice-users-mini" id="voice-users-mini"></div>' : ''}
+    </div>
+  `).join('');
+  
+  textList.querySelectorAll('.channel').forEach(el => {
+    el.onclick = () => openChannel(el.dataset.id);
+  });
+  
+  voiceList.querySelectorAll('.channel').forEach(el => {
+    el.onclick = () => joinVoiceChannel(el.dataset.id);
+  });
+  
+  renderMembers();
+}
+
+function renderMembers() {
+  const server = state.servers.get(state.currentServer);
+  const list = $('#members-list');
+  if (!server || !list) return;
+  
+  const members = server.members || [];
+  
+  list.innerHTML = members.map(m => `
+    <div class="member" data-id="${m.id}">
+      <div class="avatar ${m.status || 'offline'}">${m.avatar ? `<img src="${m.avatar}">` : m.name?.charAt(0).toUpperCase() || '?'}</div>
+      <div class="member-info">
+        <div class="member-name">
+          ${escapeHtml(m.name || 'User')}
+          ${m.id === server.ownerId ? '<svg class="crown" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.12-3.47-5.46c-.42-.66-1.34-.87-2.06-.47-.72.4-.94 1.3-.52 1.96l3.47 5.46-4.23 1.12c-.8.21-1.28 1.04-1.06 1.84l1.53 5.85h12.84l1.53-5.85c.22-.8-.26-1.63-1.06-1.84l-4.23-1.12 3.47-5.46c.42-.66.2-1.56-.52-1.96-.72-.4-1.64-.19-2.06.47l-3.47 5.46-4.23-1.12c-.8-.22-1.63.26-1.84 1.06z"/></svg>' : ''}
+        </div>
+        <div class="member-status">${displayStatus(m.status)}</div>
       </div>
     </div>
   `).join('');
   
-  const requestsContainer = $('#friend-requests');
-  if (requestsContainer) {
-    requestsContainer.innerHTML = requestsHTML || '<div class="empty">��� ������</div>';
-    $$('.accept-btn').forEach(btn => {
-      btn.onclick = () => send({ type: 'friend_accept', from: btn.dataset.id });
+  list.querySelectorAll('.member').forEach(el => {
+    el.oncontextmenu = e => {
+      e.preventDefault();
+      state.contextMember = el.dataset.id;
+      showMemberContext(e.clientX, e.clientY);
+    };
+  });
+}
+
+function showMemberContext(x, y) {
+  const ctx = $('#member-context');
+  if (!ctx) return;
+  
+  const server = state.servers.get(state.currentServer);
+  const kickBtn = ctx.querySelector('[data-action="kick"]');
+  
+  if (kickBtn) {
+    const isOwner = server?.ownerId === state.userId;
+    const isTargetOwner = state.contextMember === server?.ownerId;
+    kickBtn.style.display = isOwner && !isTargetOwner ? 'flex' : 'none';
+  }
+  
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('active');
+}
+
+function renderFriends() {
+  const online = [...state.friends.values()].filter(f => f.status === 'online');
+  const onlineList = $('#online-users');
+  const allList = $('#all-users');
+  const pendingList = $('#pending-users');
+  const pendingTab = $('.friends-tab[data-view="pending"]');
+  
+  if (onlineList) {
+    onlineList.innerHTML = online.length 
+      ? online.map(u => userItemHTML(u)).join('') 
+      : '<div class="empty">Нет друзей в сети</div>';
+  }
+  
+  if (allList) {
+    allList.innerHTML = state.friends.size 
+      ? [...state.friends.values()].map(u => userItemHTML(u)).join('') 
+      : '<div class="empty">Нет друзей</div>';
+  }
+  
+  if (pendingList) {
+    pendingList.innerHTML = state.pendingRequests.length 
+      ? state.pendingRequests.map(u => pendingItemHTML(u)).join('') 
+      : '<div class="empty">Нет запросов</div>';
+    
+    pendingList.querySelectorAll('.accept-btn').forEach(btn => {
+      btn.onclick = () => send({ type: 'accept_friend', oderId: btn.dataset.id });
     });
-    $$('.reject-btn').forEach(btn => {
-      btn.onclick = () => send({ type: 'friend_reject', from: btn.dataset.id });
+    pendingList.querySelectorAll('.reject-btn').forEach(btn => {
+      btn.onclick = () => send({ type: 'reject_friend', oderId: btn.dataset.id });
     });
   }
+  
+  if (pendingTab) {
+    const badge = pendingTab.querySelector('.pending-badge') || document.createElement('span');
+    badge.className = 'pending-badge';
+    badge.textContent = state.pendingRequests.length || '';
+    badge.style.display = state.pendingRequests.length ? 'inline' : 'none';
+    if (!pendingTab.querySelector('.pending-badge')) pendingTab.appendChild(badge);
+  }
+  
+  bindUserActions();
 }
 
 function userItemHTML(u) {
   return `
     <div class="user-item" data-id="${u.id}">
-      <div class="avatar ${u.ds}" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
-      <div class="info">
-        <div class="name">${escapeHtml(u.name)}</div>
-        <div class="status">${getStatus(u.ds)}</div>
+      <div class="avatar ${u.status || 'offline'}">${u.avatar ? `<img src="${u.avatar}">` : u.name?.charAt(0).toUpperCase() || '?'}</div>
+      <div class="user-info">
+        <div class="user-name">${escapeHtml(u.name || 'User')}</div>
+        <div class="user-status">${displayStatus(u.status)}</div>
       </div>
-      <div class="actions">
-        <button class="msg-btn" data-id="${u.id}" title="���������">
-          <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      <div class="user-actions">
+        <button class="msg-btn icon-btn" data-id="${u.id}" title="Написать">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function pendingItemHTML(u) {
+  return `
+    <div class="user-item pending" data-id="${u.id}">
+      <div class="avatar">${u.avatar ? `<img src="${u.avatar}">` : u.name?.charAt(0).toUpperCase() || '?'}</div>
+      <div class="user-info">
+        <div class="user-name">${escapeHtml(u.name || 'User')}</div>
+        <div class="user-status">Хочет добавить вас в друзья</div>
+      </div>
+      <div class="user-actions">
+        <button class="accept-btn icon-btn" data-id="${u.id}" title="Принять">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+        <button class="reject-btn icon-btn" data-id="${u.id}" title="Отклонить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>
@@ -577,287 +440,100 @@ function userItemHTML(u) {
 
 function bindUserActions() {
   $$('.msg-btn').forEach(btn => {
-    btn.onclick = e => { e.stopPropagation(); openDM(btn.dataset.id); };
+    btn.onclick = () => openDM(btn.dataset.id);
   });
 }
 
-function renderDMList() {
-  const dms = new Map();
-  Object.keys(state.dmMessages).forEach(id => {
-    const u = state.users.get(id);
-    if (u) dms.set(id, u);
-  });
-  
-  $('#dm-list').innerHTML = dms.size ? [...dms.entries()].map(([id, u]) => `
-    <div class="dm-item ${state.currentDM === id ? 'active' : ''}" data-id="${id}">
-      <div class="avatar" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
-      <span>${escapeHtml(u.name)}</span>
-    </div>
-  `).join('') : '';
-  
-  $$('.dm-item').forEach(el => { el.onclick = () => openDM(el.dataset.id); });
-}
-
-function renderChannels() {
-  const server = state.servers.get(state.currentServer);
-  if (!server) return;
-  
-  $('#server-name').textContent = server.name;
-  
-  const isOwner = server.ownerId === state.userId;
-  $('#add-channel-btn').style.display = isOwner ? 'flex' : 'none';
-  $('#add-voice-btn').style.display = isOwner ? 'flex' : 'none';
-  
-  $('#channel-list').innerHTML = (server.channels || []).map(c => `
-    <div class="channel-item ${state.currentChannel === c.id ? 'active' : ''}" data-id="${c.id}">
-      <svg viewBox="0 0 24 24"><path fill="currentColor" d="M5.41 21L6.12 17H2V15H6.53L7.24 11H3V9H7.65L8.36 5H10.36L9.65 9H13.65L14.36 5H16.36L15.65 9H20V11H15.24L14.53 15H19V17H14.12L13.41 21H11.41L12.12 17H8.12L7.41 21H5.41Z"/></svg>
-      ${escapeHtml(c.name)}
-    </div>
-  `).join('');
-  
-  $('#voice-list').innerHTML = (server.voiceChannels || []).map(v => {
-    const users = state.voiceUsers.filter(u => u.oderId === v.id);
-    const connected = state.voiceChannel === v.id;
-    return `
-      <div class="voice-item ${connected ? 'connected' : ''}" data-id="${v.id}">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
-        ${escapeHtml(v.name)}
-      </div>
-      ${users.length ? `<div class="voice-users-list">${users.map(u => `
-        <div class="voice-user-item">
-          <div class="avatar" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
-          ${escapeHtml(u.name)}
-        </div>
-      `).join('')}</div>` : ''}
-    `;
-  }).join('');
-  
-  $$('.channel-item').forEach(el => { el.onclick = () => openChannel(el.dataset.id); });
-  $$('.voice-item').forEach(el => { el.onclick = () => joinVoice(el.dataset.id); });
-}
-
-function renderMembers() {
-  const server = state.servers.get(state.currentServer);
-  if (!server) return;
-  
-  // Request server members
-  send({ type: 'get_server_members', serverId: state.currentServer });
-  
-  const online = [], offline = [];
-  const members = state.serverMembers.length ? state.serverMembers : 
-    (server.members || []).map(id => {
-      if (id === state.userId) return { id, ...state.user, isOwner: server.ownerId === id };
-      const u = state.users.get(id);
-      return u ? { id, ...u, isOwner: server.ownerId === id } : null;
-    }).filter(Boolean);
-  
-  members.forEach(m => {
-    const s = displayStatus(m.status || 'offline');
-    if (s === 'offline') offline.push({ ...m, ds: s });
-    else online.push({ ...m, ds: s });
-  });
-  
-  $('#online-count').textContent = online.length;
-  $('#offline-count').textContent = offline.length;
-  
-  const crownSVG = '<svg class="crown" viewBox="0 0 24 24"><path fill="#f1c40f" d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z"/></svg>';
-  
-  $('#members-online').innerHTML = online.map(m => `
-    <div class="member-item" data-member-id="${m.id}">
-      <div class="avatar online" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
-      <span>${escapeHtml(m.name)}</span>
-      ${m.isOwner ? crownSVG : ''}
-    </div>
-  `).join('');
-  
-  $('#members-offline').innerHTML = offline.map(m => `
-    <div class="member-item" data-member-id="${m.id}">
-      <div class="avatar offline" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
-      <span>${escapeHtml(m.name)}</span>
-      ${m.isOwner ? crownSVG : ''}
-    </div>
-  `).join('');
-  
-  // Add context menu handlers
-  $$('.member-item').forEach(el => {
-    el.oncontextmenu = e => showMemberContext(e, el.dataset.memberId);
-  });
-}
 
 function renderMessages() {
   const server = state.servers.get(state.currentServer);
-  const msgs = server?.messages?.[state.currentChannel] || [];
+  const channel = server?.channels?.find(c => c.id === state.currentChannel);
+  const container = $('#messages');
+  if (!container) return;
   
-  $('#messages').innerHTML = msgs.map(messageHTML).join('');
-  $('#messages').scrollTop = $('#messages').scrollHeight;
+  const messages = channel?.messages || [];
+  container.innerHTML = messages.map(m => messageHTML(m)).join('');
+  container.scrollTop = container.scrollHeight;
 }
 
 function renderDMMessages() {
-  const msgs = state.dmMessages[state.currentDM] || [];
-  const user = state.users.get(state.currentDM);
+  const dm = state.dms.get(state.currentDM);
+  const container = $('#dm-messages');
+  if (!container) return;
   
-  $('#dm-messages').innerHTML = msgs.map(m => {
-    const isMe = m.from === state.userId || m.author === state.user.name;
-    const avatar = isMe ? state.user.avatar : (user?.avatar || m.avatar);
-    const name = isMe ? state.user.name : (user?.name || m.author);
-    return messageHTML({ ...m, avatar, author: name });
-  }).join('');
-  $('#dm-messages').scrollTop = $('#dm-messages').scrollHeight;
+  const messages = dm?.messages || [];
+  container.innerHTML = messages.map(m => messageHTML(m)).join('');
+  container.scrollTop = container.scrollHeight;
 }
 
 function messageHTML(m) {
-  let fileHTML = '';
-  if (m.file) {
-    fileHTML = `
-      <div class="file" onclick="downloadFile('${escapeHtml(m.file.name)}', '${m.file.data || ''}')">
-        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
-        <div>
-          <div class="file-name">${escapeHtml(m.file.name)}</div>
-          <div class="file-size">${formatSize(m.file.size || 0)}</div>
-        </div>
-      </div>
-    `;
-  }
-  
+  const time = new Date(m.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   return `
     <div class="message">
-      <div class="avatar" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.author)}</div>
-      <div class="content">
-        <div class="header">
-          <span class="author">${escapeHtml(m.author)}</span>
-          <span class="time">${m.time}</span>
+      <div class="avatar">${m.avatar ? `<img src="${m.avatar}">` : m.username?.charAt(0).toUpperCase() || '?'}</div>
+      <div class="message-content">
+        <div class="message-header">
+          <span class="message-author">${escapeHtml(m.username || 'User')}</span>
+          <span class="message-time">${time}</span>
         </div>
-        <div class="text">${escapeHtml(m.text)}</div>
-        ${fileHTML}
+        <div class="message-text">${escapeHtml(m.content || '')}</div>
       </div>
     </div>
   `;
 }
 
-function renderVoiceUsers() {
-  $('#voice-users').innerHTML = state.voiceUsers.map(u => `
-    <div class="voice-user" data-user-id="${u.oderId || u.oderId}">
-      <div class="avatar ${u.muted ? 'muted' : ''}" ${u.avatar ? `style="background-image:url(${u.avatar})"` : ''}>${u.avatar ? '' : getInitial(u.name)}</div>
-      <span>${escapeHtml(u.name)}</span>
-    </div>
-  `).join('');
-}
-
-// Voice activity detection
-let audioContext = null;
-let analyser = null;
-let speakingCheckInterval = null;
-
-function startVoiceActivityDetection() {
-  if (!state.localStream || audioContext) return;
+function appendMessage(m, isDM = false) {
+  const container = isDM ? $('#dm-messages') : $('#messages');
+  if (!container) return;
   
-  audioContext = new AudioContext();
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.4;
+  container.insertAdjacentHTML('beforeend', messageHTML(m));
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping(userId, username) {
+  const el = $('#typing-indicator');
+  if (!el || userId === state.userId) return;
   
-  const source = audioContext.createMediaStreamSource(state.localStream);
-  source.connect(analyser);
+  el.textContent = `${username} печатает...`;
+  el.style.display = 'block';
   
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  let wasSpeaking = false;
-  
-  speakingCheckInterval = setInterval(() => {
-    analyser.getByteFrequencyData(dataArray);
-    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-    const isSpeaking = average > 15 && !state.micMuted;
-    
-    // Send speaking status to server if changed
-    if (isSpeaking !== wasSpeaking) {
-      wasSpeaking = isSpeaking;
-      send({ type: 'voice_speaking', speaking: isSpeaking });
-    }
-    
-    // Update local user's avatar
-    const myAvatar = $(`.voice-user[data-user-id="${state.userId}"] .avatar`);
-    if (myAvatar) {
-      myAvatar.classList.toggle('speaking', isSpeaking);
-    }
-  }, 100);
+  clearTimeout(el.timeout);
+  el.timeout = setTimeout(() => el.style.display = 'none', 3000);
 }
 
-function stopVoiceActivityDetection() {
-  if (speakingCheckInterval) {
-    clearInterval(speakingCheckInterval);
-    speakingCheckInterval = null;
-  }
-  if (audioContext) {
-    audioContext.close();
-    audioContext = null;
-    analyser = null;
-  }
-}
-
-function renderVoiceInChannel(serverId, channelId) {
-  if (state.currentServer === serverId) renderChannels();
-}
-
-function updateUserPanel() {
-  $('#user-name').textContent = state.user.name;
-  $('#user-status').textContent = getStatus(state.user.status);
-  setAvatar($('#user-avatar'), state.user.avatar, state.user.name);
-  setAvatar($('#settings-avatar'), state.user.avatar, state.user.name);
-  $('#settings-name').value = state.user.name;
-  $('#settings-status').value = state.user.status;
-}
-
-
-// Views
-function showView(id) {
-  $$('.main-view').forEach(v => v.classList.remove('active'));
-  $(`#${id}`).classList.add('active');
-  $('#members-panel').classList.toggle('visible', id === 'chat-view');
-}
-
-function showSidebar(id) {
-  $$('.sidebar-view').forEach(v => v.classList.remove('active'));
-  $(`#${id}`).classList.add('active');
-}
-
-function switchToHome() {
-  state.currentServer = null;
-  state.currentChannel = null;
-  
-  $$('.server-btn').forEach(b => b.classList.remove('active'));
-  $('.home-btn').classList.add('active');
-  
-  showSidebar('home-view');
-  showView('friends-view');
-}
-
-function switchToServer(serverId) {
+// Navigation
+function openServer(serverId) {
   state.currentServer = serverId;
   state.currentDM = null;
   
-  $$('.server-btn').forEach(b => b.classList.remove('active'));
-  $(`.server-btn[data-server="${serverId}"]`)?.classList.add('active');
-  
-  showSidebar('server-view');
-  renderChannels();
-  renderMembers();
-  
   const server = state.servers.get(serverId);
-  if (server?.channels?.length) openChannel(server.channels[0].id);
+  const serverName = $('#server-name');
+  if (serverName) serverName.textContent = server?.name || 'Сервер';
+  
+  $$('.server-btn').forEach(b => b.classList.toggle('active', b.dataset.id === serverId));
+  
+  renderChannels();
+  showView('server-view');
+  
+  const firstChannel = server?.channels?.find(c => !c.isVoice);
+  if (firstChannel) openChannel(firstChannel.id);
 }
 
 function openChannel(channelId) {
   state.currentChannel = channelId;
-  state.currentDM = null;
   
   const server = state.servers.get(state.currentServer);
   const channel = server?.channels?.find(c => c.id === channelId);
   
-  $('#channel-name').textContent = channel?.name || '�����';
-  $('#msg-input').placeholder = `�������� � #${channel?.name || '�����'}`;
+  const channelName = $('#channel-name');
+  const msgInput = $('#msg-input');
+  if (channelName) channelName.textContent = channel?.name || 'Канал';
+  if (msgInput) msgInput.placeholder = `Написать в #${channel?.name || 'канал'}`;
   
   renderChannels();
   showView('chat-view');
-  renderMessages();
+  
+  send({ type: 'get_messages', channelId });
 }
 
 function openDM(oderId) {
@@ -865,240 +541,221 @@ function openDM(oderId) {
   state.currentChannel = null;
   state.currentServer = null;
   
-  const user = state.users.get(oderId);
-  const name = user?.name || '������������';
+  const friend = state.friends.get(oderId);
+  const name = friend?.name || 'Пользователь';
   
-  $('#dm-header-name').textContent = name;
-  setAvatar($('#dm-header-avatar'), user?.avatar, name);
-  $('#dm-name').textContent = name;
-  $('#dm-username').textContent = name.toLowerCase().replace(/\s/g, '');
-  $('#dm-name-hint').textContent = name;
-  setAvatar($('#dm-avatar'), user?.avatar, name);
-  $('#dm-input').placeholder = `�������� @${name}`;
+  const dmName = $('#dm-name');
+  const dmStatus = $('#dm-status');
+  const dmInput = $('#dm-input');
+  const dmAvatar = $('#dm-avatar');
+  
+  if (dmName) dmName.textContent = name;
+  if (dmStatus) dmStatus.textContent = displayStatus(friend?.status);
+  if (dmInput) dmInput.placeholder = `Написать @${name}`;
+  if (dmAvatar) dmAvatar.textContent = name.charAt(0).toUpperCase();
   
   $$('.server-btn').forEach(b => b.classList.remove('active'));
-  $('.home-btn').classList.add('active');
-  showSidebar('home-view');
+  $('.home-btn')?.classList.add('active');
   
-  renderDMList();
   showView('dm-view');
-  renderDMMessages();
+  send({ type: 'get_dm_messages', oderId });
 }
 
-async function joinVoice(channelId) {
+// Voice
+function joinVoiceChannel(channelId) {
   if (state.voiceChannel === channelId) {
-    leaveVoice();
+    leaveVoiceChannel();
     return;
   }
   
-  if (state.voiceChannel) leaveVoice();
+  if (state.voiceChannel) leaveVoiceChannel();
   
-  await getMediaStream(false);
   state.voiceChannel = channelId;
-  send({ type: 'voice_join', serverId: state.currentServer, channelId });
-  
-  const server = state.servers.get(state.currentServer);
-  const channel = server?.voiceChannels?.find(v => v.id === channelId);
-  $('#voice-name').textContent = channel?.name || '���������';
-  
-  startVoiceActivityDetection();
+  send({ type: 'join_voice', channelId, serverId: state.currentServer });
+  startVoice();
   renderChannels();
-  showView('voice-view');
 }
 
-function leaveVoice() {
-  stopVoiceActivityDetection();
-  send({ type: 'voice_leave' });
+function leaveVoiceChannel() {
+  send({ type: 'leave_voice', channelId: state.voiceChannel });
+  stopVoice();
   state.voiceChannel = null;
-  state.voiceUsers = [];
-  
-  state.peerConnections.forEach(pc => pc.close());
-  state.peerConnections.clear();
+  state.voiceUsers.clear();
+  renderChannels();
+}
+
+async function startVoice() {
+  try {
+    state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    setupVoiceDetection();
+  } catch (e) {
+    console.error('Mic error:', e);
+    alert('Не удалось получить доступ к микрофону');
+  }
+}
+
+function stopVoice() {
   if (state.localStream) {
     state.localStream.getTracks().forEach(t => t.stop());
     state.localStream = null;
   }
-  $$('audio[id^="remote-audio"]').forEach(a => a.remove());
-  
-  renderChannels();
-  if (state.currentChannel) showView('chat-view');
-  else showView('friends-view');
+  state.peerConnections.forEach(pc => pc.close());
+  state.peerConnections.clear();
 }
 
-// Actions
-function sendMessage() {
-  const input = $('#msg-input');
-  const text = input.value.trim();
-  if (!text || !state.currentServer || !state.currentChannel) return;
+function setupVoiceDetection() {
+  if (!state.localStream) return;
   
-  send({ type: 'message', serverId: state.currentServer, channel: state.currentChannel, text });
-  input.value = '';
-}
-
-function sendDM() {
-  const input = $('#dm-input');
-  const text = input.value.trim();
-  if (!text || !state.currentDM) return;
+  const ctx = new AudioContext();
+  const analyser = ctx.createAnalyser();
+  const source = ctx.createMediaStreamSource(state.localStream);
+  source.connect(analyser);
   
-  send({ type: 'dm', to: state.currentDM, text });
-  input.value = '';
-}
-
-function attachFile(isDM = false) {
-  const input = isDM ? $('#dm-file-input') : $('#file-input');
-  input.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
+  analyser.fftSize = 256;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  
+  function check() {
+    if (!state.voiceChannel) return;
     
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileData = { name: file.name, size: file.size, data: reader.result };
-      if (isDM) send({ type: 'dm', to: state.currentDM, text: '', file: fileData });
-      else send({ type: 'message', serverId: state.currentServer, channel: state.currentChannel, text: '', file: fileData });
-    };
-    reader.readAsDataURL(file);
-  };
-  input.click();
+    analyser.getByteFrequencyData(data);
+    const avg = data.reduce((a, b) => a + b) / data.length;
+    const speaking = avg > 30;
+    
+    const myVoice = $(`.voice-user[data-id="${state.userId}"]`);
+    if (myVoice) myVoice.classList.toggle('speaking', speaking);
+    
+    requestAnimationFrame(check);
+  }
+  check();
 }
 
-function downloadFile(name, data) {
-  if (!data) return;
-  const a = document.createElement('a');
-  a.href = data;
-  a.download = name;
-  a.click();
+function renderVoiceUsers() {
+  const container = $('#voice-users-mini');
+  if (!container) return;
+  
+  container.innerHTML = [...state.voiceUsers.values()].map(u => `
+    <div class="voice-user ${u.speaking ? 'speaking' : ''}" data-id="${u.id}">
+      <div class="avatar">${u.name?.charAt(0).toUpperCase() || '?'}</div>
+      <span>${escapeHtml(u.name || 'User')}</span>
+    </div>
+  `).join('');
 }
 
-function showTyping(name) {
-  const el = $('#typing');
-  el.textContent = `${name} ��������...`;
-  clearTimeout(el.timeout);
-  el.timeout = setTimeout(() => el.textContent = '', 3000);
+function handleVoiceSignal(msg) {
+  // WebRTC signaling
+  const { from, signal } = msg;
+  
+  if (signal.type === 'offer') {
+    const pc = createPeerConnection(from);
+    pc.setRemoteDescription(new RTCSessionDescription(signal))
+      .then(() => pc.createAnswer())
+      .then(answer => pc.setLocalDescription(answer))
+      .then(() => send({ type: 'voice_signal', to: from, signal: pc.localDescription }));
+  } else if (signal.type === 'answer') {
+    const pc = state.peerConnections.get(from);
+    if (pc) pc.setRemoteDescription(new RTCSessionDescription(signal));
+  } else if (signal.candidate) {
+    const pc = state.peerConnections.get(from);
+    if (pc) pc.addIceCandidate(new RTCIceCandidate(signal));
+  }
 }
 
-function showServerContext(e, serverId) {
-  e.preventDefault();
-  state.contextServer = serverId;
+function createPeerConnection(oderId) {
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
   
-  const menu = $('#server-context');
-  const server = state.servers.get(serverId);
-  
-  menu.querySelector('[data-action="settings"]').style.display = server?.ownerId === state.userId ? 'flex' : 'none';
-  menu.querySelector('[data-action="leave"]').style.display = server?.ownerId !== state.userId ? 'flex' : 'none';
-  
-  menu.style.left = e.clientX + 'px';
-  menu.style.top = e.clientY + 'px';
-  menu.classList.add('visible');
-}
-
-function showMemberContext(e, memberId) {
-  e.preventDefault();
-  if (memberId === state.userId) return; // Don't show menu for self
-  
-  state.contextMember = memberId;
-  const menu = $('#member-context');
-  const server = state.servers.get(state.currentServer);
-  const isOwner = server?.ownerId === state.userId;
-  const isMemberOwner = server?.ownerId === memberId;
-  
-  // Show kick button only if current user is owner and target is not owner
-  const showKick = isOwner && !isMemberOwner;
-  $('#member-kick-btn').style.display = showKick ? 'flex' : 'none';
-  $('#member-kick-divider').style.display = showKick ? 'block' : 'none';
-  
-  menu.style.left = e.clientX + 'px';
-  menu.style.top = e.clientY + 'px';
-  menu.classList.add('visible');
-}
-
-function hideContextMenu() {
-  const serverCtx = $('#server-context');
-  const memberCtx = $('#member-context');
-  if (serverCtx) serverCtx.classList.remove('visible');
-  if (memberCtx) memberCtx.classList.remove('visible');
-}
-
-function openModal(id) { 
-  const modal = $(`#${id}`);
-  if (modal) modal.classList.add('active'); 
-}
-function closeModal(id) { 
-  const modal = $(`#${id}`);
-  if (modal) modal.classList.remove('active'); 
-}
-
-function showUserProfile(oderId) {
-  const user = state.users.get(oderId) || state.serverMembers.find(m => m.id === oderId);
-  if (!user) return;
-  
-  state.profileUser = oderId;
-  
-  // Set avatar
-  const avatarEl = $('#profile-avatar');
-  if (user.avatar) {
-    avatarEl.style.backgroundImage = `url(${user.avatar})`;
-    avatarEl.textContent = '';
-  } else {
-    avatarEl.style.backgroundImage = '';
-    avatarEl.textContent = getInitial(user.name);
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(t => pc.addTrack(t, state.localStream));
   }
   
-  // Set status dot
-  const statusDot = $('#profile-status-dot');
-  statusDot.className = 'profile-status-dot ' + (user.status || 'offline');
+  pc.onicecandidate = e => {
+    if (e.candidate) send({ type: 'voice_signal', to: oderId, signal: e.candidate });
+  };
   
-  // Set info
-  $('#profile-name').textContent = user.name;
-  $('#profile-username').textContent = user.name.toLowerCase().replace(/\s/g, '');
+  pc.ontrack = e => {
+    const audio = new Audio();
+    audio.srcObject = e.streams[0];
+    audio.play();
+  };
   
-  // Set joined date
-  const joinedDate = user.createdAt ? new Date(user.createdAt) : new Date();
-  $('#profile-joined').textContent = joinedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) + ' �.';
+  state.peerConnections.set(oderId, pc);
+  return pc;
+}
+
+function handleIncomingCall(msg) {
+  const user = state.friends.get(msg.from);
+  if (confirm(`${user?.name || 'Пользователь'} звонит вам. Принять?`)) {
+    openDM(msg.from);
+    // Accept call logic
+  }
+}
+
+
+// User Profile
+function showUserProfile(userId) {
+  state.profileUser = userId;
+  send({ type: 'get_profile', userId });
+}
+
+function showUserProfileData(user) {
+  const modal = $('#profile-modal');
+  if (!modal) return;
   
-  // Check if already friends
-  const isFriend = state.friends.has(oderId);
-  $('#profile-friend-text').textContent = isFriend ? '� �������' : '��������';
-  $('#profile-friend-btn').disabled = isFriend;
+  const avatar = $('#profile-avatar');
+  const name = $('#profile-name');
+  const status = $('#profile-status');
+  const banner = $('#profile-banner');
+  const joined = $('#profile-joined');
+  const friendBtn = $('#profile-friend-btn');
+  const friendText = $('#profile-friend-text');
+  
+  if (avatar) avatar.textContent = user.name?.charAt(0).toUpperCase() || '?';
+  if (name) name.textContent = user.name || 'Пользователь';
+  if (status) status.textContent = displayStatus(user.status);
+  if (banner) banner.style.background = user.banner || 'linear-gradient(135deg, #5f27cd, #5f27cd88)';
+  
+  if (joined) {
+    const date = new Date(user.createdAt || Date.now());
+    joined.textContent = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) + ' г.';
+  }
+  
+  const isFriend = state.friends.has(user.id);
+  if (friendText) friendText.textContent = isFriend ? 'Удалить из друзей' : 'Добавить в друзья';
+  if (friendBtn) friendBtn.dataset.action = isFriend ? 'remove' : 'add';
   
   openModal('profile-modal');
 }
 
+// Server Settings
 function loadServerMembers() {
   const server = state.servers.get(state.contextServer);
   if (!server) return;
   
-  const members = state.serverMembers.length ? state.serverMembers : 
-    (server.members || []).map(id => {
-      if (id === state.userId) return { id, ...state.user };
-      const u = state.users.get(id);
-      return u ? { id, ...u } : null;
-    }).filter(Boolean);
-  
+  const members = server.members || [];
   const roles = server.roles || [];
+  const list = $('#members-manage-list');
+  if (!list) return;
   
-  $('#members-manage-list').innerHTML = members.map(m => `
+  list.innerHTML = members.map(m => `
     <div class="member-manage-item" data-id="${m.id}">
-      <div class="avatar" ${m.avatar ? `style="background-image:url(${m.avatar})"` : ''}>${m.avatar ? '' : getInitial(m.name)}</div>
+      <div class="avatar">${m.avatar ? `<img src="${m.avatar}">` : m.name?.charAt(0).toUpperCase() || '?'}</div>
       <div class="member-manage-info">
-        <div class="name">${escapeHtml(m.name)}</div>
-        <div class="role">${m.id === server.ownerId ? '��������' : '��������'}</div>
+        <div class="member-name">${escapeHtml(m.name || 'User')}</div>
       </div>
       <div class="member-manage-actions">
         ${m.id !== server.ownerId && server.ownerId === state.userId ? `
           <select class="role-select" data-member="${m.id}">
-            <option value="">��� ����</option>
+            <option value="">Без роли</option>
             ${roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
           </select>
-          <button class="btn small danger kick-member-btn" data-id="${m.id}">�������</button>
+          <button class="btn small danger kick-member-btn" data-id="${m.id}">Кик</button>
         ` : ''}
       </div>
     </div>
-  `).join('') || '<div class="empty">��� ����������</div>';
+  `).join('') || '<div class="empty">Нет участников</div>';
   
-  // Bind kick buttons
   $$('.kick-member-btn').forEach(btn => {
     btn.onclick = () => {
-      if (confirm('������� ������������?')) {
+      if (confirm('Удалить пользователя с сервера?')) {
         send({ type: 'kick_member', serverId: state.contextServer, memberId: btn.dataset.id });
       }
     };
@@ -1110,18 +767,19 @@ function loadServerRoles() {
   if (!server) return;
   
   const roles = server.roles || [];
+  const list = $('#roles-list');
+  if (!list) return;
   
-  $('#roles-list').innerHTML = roles.map(r => `
+  list.innerHTML = roles.map(r => `
     <div class="role-item" data-id="${r.id}">
       <div class="role-color" style="background: ${r.color}"></div>
       <div class="role-name">${escapeHtml(r.name)}</div>
       <div class="role-actions">
-        <button class="delete-role-btn danger" data-id="${r.id}">�������</button>
+        <button class="delete-role-btn danger" data-id="${r.id}">Удалить</button>
       </div>
     </div>
-  `).join('') || '<div class="empty">��� �����</div>';
+  `).join('') || '<div class="empty">Нет ролей</div>';
   
-  // Bind delete buttons
   $$('.delete-role-btn').forEach(btn => {
     btn.onclick = () => {
       send({ type: 'delete_role', serverId: state.contextServer, roleId: btn.dataset.id });
@@ -1132,6 +790,7 @@ function loadServerRoles() {
 function applyTheme(theme) {
   document.body.className = `theme-${theme}`;
   $$('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  state.settings.theme = theme;
 }
 
 async function loadAudioDevices() {
@@ -1140,226 +799,210 @@ async function loadAudioDevices() {
     const mics = devices.filter(d => d.kind === 'audioinput');
     const speakers = devices.filter(d => d.kind === 'audiooutput');
     
-    $('#mic-select').innerHTML = mics.map(d => `<option value="${d.deviceId}">${d.label || '��������'}</option>`).join('');
-    $('#speaker-select').innerHTML = speakers.map(d => `<option value="${d.deviceId}">${d.label || '�������'}</option>`).join('');
+    const micSelect = $('#mic-select');
+    const speakerSelect = $('#speaker-select');
     
-    if (state.settings.micDevice) $('#mic-select').value = state.settings.micDevice;
-    if (state.settings.speakerDevice) $('#speaker-select').value = state.settings.speakerDevice;
+    if (micSelect) {
+      micSelect.innerHTML = mics.map(d => `<option value="${d.deviceId}">${d.label || 'Микрофон'}</option>`).join('');
+      if (state.settings.micDevice) micSelect.value = state.settings.micDevice;
+    }
+    
+    if (speakerSelect) {
+      speakerSelect.innerHTML = speakers.map(d => `<option value="${d.deviceId}">${d.label || 'Динамик'}</option>`).join('');
+      if (state.settings.speakerDevice) speakerSelect.value = state.settings.speakerDevice;
+    }
   } catch (e) {
     console.error('Audio devices error:', e);
   }
 }
 
-
 // Init
 function init() {
-  // Auth
-  $('#login-btn').onclick = () => {
-    const email = $('#login-email').value.trim();
-    const pass = $('#login-pass').value;
-    if (!email || !pass) { $('#auth-error').textContent = '��������� ��� ����'; return; }
-    if (!send({ type: 'login', email, password: pass })) {
-      $('#auth-error').textContent = '��� ���������� � ��������';
-    }
-  };
+  // Auth handlers
+  const loginBtn = $('#login-btn');
+  if (loginBtn) {
+    loginBtn.onclick = () => {
+      const email = $('#login-email')?.value.trim();
+      const pass = $('#login-pass')?.value;
+      const authErr = $('#auth-error');
+      
+      if (!email || !pass) {
+        if (authErr) authErr.textContent = 'Заполните все поля';
+        return;
+      }
+      
+      if (!send({ type: 'login', email, password: pass })) {
+        if (authErr) authErr.textContent = 'Нет подключения к серверу';
+      }
+    };
+  }
   
-  $('#reg-btn').onclick = () => {
-    const name = $('#reg-name').value.trim();
-    const email = $('#reg-email').value.trim();
-    const pass = $('#reg-pass').value;
-    if (!name || !email || !pass) { $('#auth-error').textContent = '��������� ��� ����'; return; }
-    if (!send({ type: 'register', name, email, password: pass })) {
-      $('#auth-error').textContent = '��� ���������� � ��������';
-    }
-  };
+  const regBtn = $('#reg-btn');
+  if (regBtn) {
+    regBtn.onclick = () => {
+      const name = $('#reg-name')?.value.trim();
+      const email = $('#reg-email')?.value.trim();
+      const pass = $('#reg-pass')?.value;
+      const authErr = $('#auth-error');
+      
+      if (!name || !email || !pass) {
+        if (authErr) authErr.textContent = 'Заполните все поля';
+        return;
+      }
+      
+      if (!send({ type: 'register', name, email, password: pass })) {
+        if (authErr) authErr.textContent = 'Нет подключения к серверу';
+      }
+    };
+  }
   
-  $$('.modal-tab').forEach(tab => {
+  // Auth tabs
+  $$('.auth-tab').forEach(tab => {
     tab.onclick = () => {
-      $$('.modal-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
       $$('.auth-tab').forEach(t => t.classList.remove('active'));
-      $(`#auth-${tab.dataset.tab}`).classList.add('active');
-    };
-  });
-  
-  // Navigation
-  $('.home-btn').onclick = switchToHome;
-  $('#friends-btn').onclick = () => showView('friends-view');
-  
-  // Tabs
-  $$('.tab').forEach(tab => {
-    tab.onclick = () => {
-      $$('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      $$('.tab-content').forEach(c => c.classList.remove('active'));
-      $(`#tab-${tab.dataset.tab}`).classList.add('active');
+      $$('.auth-form').forEach(f => f.classList.remove('active'));
+      $(`#${tab.dataset.form}`)?.classList.add('active');
     };
   });
   
-  // Messages
-  $('#msg-input').onkeypress = e => { if (e.key === 'Enter') sendMessage(); };
-  $('#send-btn').onclick = sendMessage;
-  $('#attach-btn').onclick = () => attachFile(false);
+  // Home button
+  const homeBtn = $('.home-btn');
+  if (homeBtn) {
+    homeBtn.onclick = () => {
+      state.currentServer = null;
+      state.currentChannel = null;
+      state.currentDM = null;
+      $$('.server-btn').forEach(b => b.classList.remove('active'));
+      homeBtn.classList.add('active');
+      showView('home-view');
+    };
+  }
   
-  $('#dm-input').onkeypress = e => { if (e.key === 'Enter') sendDM(); };
-  $('#dm-send-btn').onclick = sendDM;
-  $('#dm-attach-btn').onclick = () => attachFile(true);
-  
-  // User controls
-  $('#mic-toggle').onclick = () => {
-    state.micMuted = !state.micMuted;
-    $('#mic-toggle').classList.toggle('muted', state.micMuted);
-    if (state.localStream) {
-      state.localStream.getAudioTracks().forEach(t => t.enabled = !state.micMuted);
-    }
-    if (state.voiceChannel) send({ type: 'voice_mute', muted: state.micMuted });
-  };
-  
-  $('#sound-toggle').onclick = () => {
-    state.soundMuted = !state.soundMuted;
-    $('#sound-toggle').classList.toggle('muted', state.soundMuted);
-    $$('audio[id^="remote-audio"]').forEach(a => a.muted = state.soundMuted);
-  };
-  
-  // Voice
-  $('#voice-mic').onclick = () => {
-    state.micMuted = !state.micMuted;
-    $('#voice-mic').classList.toggle('active', !state.micMuted);
-    if (state.localStream) {
-      state.localStream.getAudioTracks().forEach(t => t.enabled = !state.micMuted);
-    }
-    send({ type: 'voice_mute', muted: state.micMuted });
-  };
-  $('#voice-leave').onclick = leaveVoice;
-  
-  // Settings
-  $('#settings-btn').onclick = () => {
-    loadAudioDevices();
-    openModal('settings-modal');
-  };
-  
-  $$('.settings-tab').forEach(tab => {
+  // Friends tabs
+  $$('.friends-tab').forEach(tab => {
     tab.onclick = () => {
-      $$('.settings-tab').forEach(t => t.classList.remove('active'));
+      $$('.friends-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      $$('.settings-panel').forEach(p => p.classList.remove('active'));
-      $(`#settings-${tab.dataset.settings}`).classList.add('active');
+      state.currentView = tab.dataset.view;
+      $$('.friends-list').forEach(l => l.classList.remove('active'));
+      $(`#${tab.dataset.view}-users`)?.classList.add('active');
     };
   });
+
   
-  $('#upload-avatar').onclick = () => $('#avatar-input').click();
-  $('#avatar-input').onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      state.user.avatar = ev.target.result;
-      setAvatar($('#settings-avatar'), state.user.avatar, state.user.name);
-    };
-    reader.readAsDataURL(file);
-  };
-  
-  $('#remove-avatar').onclick = () => {
-    state.user.avatar = null;
-    setAvatar($('#settings-avatar'), null, state.user.name);
-  };
-  
-  $('#save-profile').onclick = () => {
-    state.user.name = $('#settings-name').value.trim() || '������������';
-    state.user.status = $('#settings-status').value;
-    send({ type: 'update_profile', name: state.user.name, avatar: state.user.avatar, status: state.user.status });
-    updateUserPanel();
-    closeModal('settings-modal');
-  };
-  
-  $('#save-audio').onclick = () => {
-    state.settings.micDevice = $('#mic-select').value;
-    state.settings.speakerDevice = $('#speaker-select').value;
-    send({ type: 'update_settings', settings: state.settings });
-  };
-  
-  $$('.theme-btn').forEach(btn => {
-    btn.onclick = () => {
-      state.settings.theme = btn.dataset.theme;
-      applyTheme(btn.dataset.theme);
-      send({ type: 'update_settings', settings: state.settings });
-    };
-  });
+  // Add server
+  const addServerBtn = $('#add-server-btn');
+  if (addServerBtn) {
+    addServerBtn.onclick = () => openModal('server-modal');
+  }
   
   // Create server
-  $('#add-server-btn').onclick = () => {
-    state.newServerIcon = null;
-    setAvatar($('#new-server-icon'), null, '+');
-    $('#new-server-name').value = '';
-    openModal('create-server-modal');
-  };
-  
-  $('#upload-server-icon').onclick = () => $('#server-icon-input').click();
-  $('#server-icon-input').onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      state.newServerIcon = ev.target.result;
-      $('#new-server-icon').style.backgroundImage = `url(${ev.target.result})`;
-      $('#new-server-icon').textContent = '';
+  const createServerBtn = $('#create-server-btn');
+  if (createServerBtn) {
+    createServerBtn.onclick = () => {
+      const name = $('#server-name-input')?.value.trim();
+      if (!name) return;
+      send({ type: 'create_server', name });
+      $('#server-name-input').value = '';
+      closeModal('server-modal');
     };
-    reader.readAsDataURL(file);
-  };
-  
-  $('#create-server-btn').onclick = () => {
-    const name = $('#new-server-name').value.trim();
-    if (!name) return;
-    send({ type: 'create_server', name, icon: state.newServerIcon });
-  };
+  }
   
   // Join server
-  $('#join-server-btn').onclick = () => openModal('join-modal');
-  $('#use-invite-btn').onclick = () => {
-    const code = $('#invite-code').value.trim();
-    if (!code) return;
-    send({ type: 'use_invite', code });
-    closeModal('join-modal');
-  };
-  
-  // Server context menu
-  document.onclick = hideContextMenu;
-  
-  $('#server-context').querySelectorAll('button').forEach(btn => {
-    btn.onclick = () => {
-      const action = btn.dataset.action;
-      const serverId = state.contextServer;
-      
-      if (action === 'invite') {
-        send({ type: 'create_invite', serverId });
-      } else if (action === 'settings') {
-        const server = state.servers.get(serverId);
-        $('#edit-server-name').value = server?.name || '';
-        $('#preview-server-name').textContent = server?.name || '������';
-        setAvatar($('#edit-server-icon'), server?.icon, server?.name);
-        state.editServerIcon = server?.icon;
-        state.editServerBanner = server?.banner || '#5f27cd';
-        $('#preview-banner').style.background = `linear-gradient(135deg, ${state.editServerBanner}, ${state.editServerBanner}88)`;
-        
-        // Reset to first tab
-        $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
-        $('.server-settings-tab[data-panel="profile"]')?.classList.add('active');
-        $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
-        $('#panel-profile')?.classList.add('active');
-        const hdrProf = $('.server-settings-header h2'); if (hdrProf) hdrProf.textContent = '������ �������';
-        
-        openModal('server-settings-modal');
-      } else if (action === 'leave') {
-        send({ type: 'leave_server', serverId });
-      }
-      hideContextMenu();
+  const joinServerBtn = $('#join-server-btn');
+  if (joinServerBtn) {
+    joinServerBtn.onclick = () => {
+      const code = $('#invite-code-input')?.value.trim();
+      if (!code) return;
+      send({ type: 'join_server', code });
+      $('#invite-code-input').value = '';
+      closeModal('server-modal');
     };
+  }
+  
+  // Send message
+  const msgInput = $('#msg-input');
+  if (msgInput) {
+    msgInput.onkeydown = e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const content = msgInput.value.trim();
+        if (!content) return;
+        send({ type: 'message', channelId: state.currentChannel, content });
+        msgInput.value = '';
+      } else {
+        send({ type: 'typing', channelId: state.currentChannel });
+      }
+    };
+  }
+  
+  // Send DM
+  const dmInput = $('#dm-input');
+  if (dmInput) {
+    dmInput.onkeydown = e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const content = dmInput.value.trim();
+        if (!content) return;
+        send({ type: 'dm_message', oderId: state.currentDM, content });
+        dmInput.value = '';
+      }
+    };
+  }
+  
+  // Theme buttons
+  $$('.theme-btn').forEach(btn => {
+    btn.onclick = () => applyTheme(btn.dataset.theme);
   });
   
+  // Settings button
+  const settingsBtn = $('#settings-btn');
+  if (settingsBtn) {
+    settingsBtn.onclick = () => openModal('settings-modal');
+  }
+  
+  // Server context menu
+  const serverCtx = $('#server-context');
+  if (serverCtx) {
+    serverCtx.querySelectorAll('button').forEach(btn => {
+      btn.onclick = () => {
+        const action = btn.dataset.action;
+        const serverId = state.contextServer;
+        
+        if (action === 'invite') {
+          send({ type: 'create_invite', serverId });
+        } else if (action === 'settings') {
+          const server = state.servers.get(serverId);
+          const editName = $('#edit-server-name');
+          const previewName = $('#preview-server-name');
+          const previewBanner = $('#preview-banner');
+          
+          if (editName) editName.value = server?.name || '';
+          if (previewName) previewName.textContent = server?.name || '';
+          
+          state.editServerIcon = server?.icon;
+          state.editServerBanner = server?.banner || '#5f27cd';
+          if (previewBanner) previewBanner.style.background = `linear-gradient(135deg, ${state.editServerBanner}, ${state.editServerBanner}88)`;
+          
+          $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
+          $('.server-settings-tab[data-panel="profile"]')?.classList.add('active');
+          $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
+          $('#panel-profile')?.classList.add('active');
+          
+          openModal('server-settings-modal');
+        } else if (action === 'leave') {
+          send({ type: 'leave_server', serverId });
+        }
+        hideContextMenu();
+      };
+    });
+  }
+  
   // Member context menu
-  const memberCtxEl = $('#member-context');
-  if (memberCtxEl) {
-    memberCtxEl.querySelectorAll('button').forEach(btn => {
+  const memberCtx = $('#member-context');
+  if (memberCtx) {
+    memberCtx.querySelectorAll('button').forEach(btn => {
       btn.onclick = () => {
         const action = btn.dataset.action;
         const memberId = state.contextMember;
@@ -1393,7 +1036,12 @@ function init() {
   if (profileFriendBtn) {
     profileFriendBtn.onclick = () => {
       if (state.profileUser) {
-        send({ type: 'friend_request', to: state.profileUser });
+        const action = profileFriendBtn.dataset.action;
+        if (action === 'add') {
+          send({ type: 'friend_request', to: state.profileUser });
+        } else {
+          send({ type: 'remove_friend', oderId: state.profileUser });
+        }
       }
     };
   }
@@ -1406,56 +1054,20 @@ function init() {
       $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
       $(`#panel-${tab.dataset.panel}`)?.classList.add('active');
       
-      // Update header
-      const titles = {
-        profile: '������� �������',
-        roles: '����',
-        invites: '�����������',
-        bans: '����',
-        members: '���������'
-      };
-      const hdr2 = $('.server-settings-header h2'); if (hdr2) hdr2.textContent = titles[tab.dataset.panel] || '��������';
-      
-      // Load data for panel
       if (tab.dataset.panel === 'members') loadServerMembers();
       if (tab.dataset.panel === 'roles') loadServerRoles();
     };
   });
   
-  // Banner color selection
-  $$('.banner-color').forEach(btn => {
-    btn.onclick = () => {
-      $$('.banner-color').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.editServerBanner = btn.dataset.color;
-      $('#preview-banner').style.background = btn.style.background;
+  // Save server settings
+  const saveServerBtn = $('#save-server-btn');
+  if (saveServerBtn) {
+    saveServerBtn.onclick = () => {
+      const name = $('#edit-server-name')?.value.trim();
+      if (!name) return;
+      send({ type: 'update_server', serverId: state.contextServer, name, icon: state.editServerIcon, banner: state.editServerBanner });
     };
-  });
-  
-  // Server settings
-  $('#edit-server-icon-btn').onclick = () => $('#edit-icon-input').click();
-  $('#edit-icon-input').onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      state.editServerIcon = ev.target.result;
-      $('#edit-server-icon').style.backgroundImage = `url(${ev.target.result})`;
-      $('#edit-server-icon').textContent = '';
-    };
-    reader.readAsDataURL(file);
-  };
-  
-  // Update preview on name change
-  $('#edit-server-name').oninput = e => {
-    $('#preview-server-name').textContent = e.target.value || '������';
-  };
-  
-  $('#save-server-btn').onclick = () => {
-    const name = $('#edit-server-name').value.trim();
-    if (!name) return;
-    send({ type: 'update_server', serverId: state.contextServer, name, icon: state.editServerIcon, banner: state.editServerBanner });
-  };
+  }
   
   // Delete server
   const deleteServerBtn = $('#delete-server-btn');
@@ -1472,8 +1084,8 @@ function init() {
   const createRoleBtn = $('#create-role-btn');
   if (createRoleBtn) {
     createRoleBtn.onclick = () => {
-      const name = $('#new-role-name').value.trim();
-      const color = $('#new-role-color').value;
+      const name = $('#new-role-name')?.value.trim();
+      const color = $('#new-role-color')?.value;
       if (!name) return;
       send({ type: 'create_role', serverId: state.contextServer, name, color });
       $('#new-role-name').value = '';
@@ -1490,20 +1102,33 @@ function init() {
   
   // Create channel
   const addChannelBtn = $('#add-channel-btn');
-  if (addChannelBtn) addChannelBtn.onclick = () => { state.creatingVoice = false; openModal('channel-modal'); };
-  const addVoiceBtn = $('#add-voice-btn');
-  if (addVoiceBtn) addVoiceBtn.onclick = () => { state.creatingVoice = true; openModal('channel-modal'); };
-  const createChannelBtn = $('#create-channel-btn');
-  if (createChannelBtn) {
-    createChannelBtn.onclick = () => {
-      const name = $('#new-channel-name').value.trim();
-      if (!name) return;
-      send({ type: 'create_channel', serverId: state.currentServer, name, isVoice: state.creatingVoice });
-      $('#new-channel-name').value = '';
+  if (addChannelBtn) {
+    addChannelBtn.onclick = () => {
+      state.creatingVoice = false;
+      openModal('channel-modal');
     };
   }
   
-  // Invite
+  const addVoiceBtn = $('#add-voice-btn');
+  if (addVoiceBtn) {
+    addVoiceBtn.onclick = () => {
+      state.creatingVoice = true;
+      openModal('channel-modal');
+    };
+  }
+  
+  const createChannelBtn = $('#create-channel-btn');
+  if (createChannelBtn) {
+    createChannelBtn.onclick = () => {
+      const name = $('#new-channel-name')?.value.trim();
+      if (!name) return;
+      send({ type: 'create_channel', serverId: state.currentServer, name, isVoice: state.creatingVoice });
+      $('#new-channel-name').value = '';
+      closeModal('channel-modal');
+    };
+  }
+  
+  // Copy invite
   const copyInviteBtn = $('#copy-invite');
   if (copyInviteBtn) {
     copyInviteBtn.onclick = () => {
@@ -1516,29 +1141,31 @@ function init() {
   
   // Close modals
   $$('[data-close]').forEach(btn => {
-    btn.onclick = () => btn.closest('.modal').classList.remove('active');
+    btn.onclick = () => {
+      const modal = btn.closest('.modal');
+      if (modal) modal.classList.remove('active');
+    };
   });
   
-  // Search users - send friend request by name
+  // Search/add friend
   const searchBtn = $('#search-btn');
   if (searchBtn) {
     searchBtn.onclick = () => {
-      const name = $('#search-input').value.trim();
+      const name = $('#search-input')?.value.trim();
       if (!name) return;
       send({ type: 'friend_request', name });
       $('#search-input').value = '';
-      const searchResults = $('#search-results');
-      if (searchResults) searchResults.innerHTML = '<div class="empty">Запрос отправлен!</div>';
+      const results = $('#search-results');
+      if (results) results.innerHTML = '<div class="empty">Запрос отправлен!</div>';
     };
   }
   
-  // DM Call buttons
-  $$('.dm-header-actions .icon-btn').forEach((btn, i) => {
-    if (i === 0) btn.onclick = () => { if (state.currentDM) startCall(state.currentDM, false); };
-    if (i === 1) btn.onclick = () => { if (state.currentDM) startCall(state.currentDM, true); };
+  // Hide context menus on click outside
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.context-menu')) hideContextMenu();
   });
   
-  // Connect
+  // Connect and show auth
   connect();
   openModal('auth-modal');
 }
