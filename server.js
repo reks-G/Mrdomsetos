@@ -296,7 +296,7 @@ wss.on('connection', (ws) => {
             text: data.text,
             file: data.file,
             replyTo: data.replyTo || null,
-            time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+            time: Date.now()
           };
 
           if (!srv.messages[data.channel]) srv.messages[data.channel] = [];
@@ -349,7 +349,7 @@ wss.on('connection', (ws) => {
 
         case 'dm': {
           const user = users.get(userId);
-          const msg = { id: Date.now(), from: userId, to: data.to, author: user?.name, avatar: user?.avatar, text: data.text, time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) };
+          const msg = { id: Date.now(), from: userId, to: data.to, author: user?.name, avatar: user?.avatar, text: data.text, time: Date.now() };
           sendTo(data.to, { type: 'dm', message: msg });
           ws.send(JSON.stringify({ type: 'dm_sent', to: data.to, message: msg }));
           break;

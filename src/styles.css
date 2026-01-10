@@ -1784,3 +1784,26 @@ body::before {
 .message-reply.deleted:hover .reply-content {
   color: var(--text-muted);
 }
+
+/* Notifications */
+.notification {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(20, 20, 25, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 24px;
+  color: var(--text-primary);
+  font-size: 14px;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.3s ease;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+.notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
