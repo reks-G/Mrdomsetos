@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://localhost:3001 wss://localhost:3001; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:">
+  <title>MrDomestos*</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-dark">
+  <!-- Custom Title Bar -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-title">✦ MrDomestos</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" id="minimize-btn">
+        <svg viewBox="0 0 12 12"><rect y="5" width="12" height="2" rx="1"/></svg>
+      </button>
+      <button class="titlebar-btn" id="maximize-btn">
+        <svg viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="titlebar-btn close" id="close-btn">
+        <svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="version-badge">beta</div>
+  
+  <div class="app hidden" id="main-app">
+    <!-- Servers Sidebar -->
+    <nav class="servers" id="servers-list">
+      <div class="server-btn home-btn active" data-view="home" title="Главная">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </div>
+      <div class="server-divider"></div>
+      <div class="server-btn add-server" id="add-server-btn" title="Создать сервер">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <div class="server-btn join-server" id="join-server-btn" title="Присоединиться">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      </div>
+    </nav>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-view home-view active" id="home-view">
+        <div class="sidebar-header"><h2>✦ MrDomestos</h2></div>
+        <div class="sidebar-nav">
+          <button class="nav-btn active" id="friends-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Друзья
+          </button>
+        </div>
+        <div class="sidebar-section">
+          <div class="section-title">Личные сообщения</div>
+          <div id="dm-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-view server-view" id="server-view">
+        <div class="sidebar-header server-header">
+          <h2 id="server-name">Сервер</h2>
+          <button class="icon-btn" id="server-menu-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <div class="sidebar-section">
+          <div class="section-title" data-category="text">
+            <span>Текстовые каналы</span>
+            <button class="add-btn" id="add-channel-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          </div>
+          <div id="channel-list"></div>
+          <div class="section-title" data-category="voice">
+            <span>Голосовые каналы</span>
+            <button class="add-btn" id="add-voice-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          </div>
+          <div id="voice-list"></div>
+        </div>
+      </div>
+
+      <!-- User Panel -->
+      <div class="user-panel">
+        <div class="user-avatar" id="user-avatar"></div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">Гость</div>
+          <div class="user-status" id="user-status">В сети</div>
+        </div>
+        <div class="user-controls">
+          <button id="mic-toggle" title="Микрофон"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+          <button id="sound-toggle" title="Звук"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+          <button id="settings-btn" title="Настройки"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Friends View -->
+      <div class="main-view active" id="friends-view">
+        <div class="main-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Друзья</span>
+          <div class="tabs">
+            <button class="tab active" data-tab="online">В сети</button>
+            <button class="tab" data-tab="all">Все</button>
+            <button class="tab" data-tab="pending">Ожидание <span class="pending-count" id="pending-count"></span></button>
+            <button class="tab accent" data-tab="add">Добавить</button>
+          </div>
+        </div>
+        <div class="main-content">
+          <div class="tab-content active" id="tab-online"><div id="online-users"></div></div>
+          <div class="tab-content" id="tab-all"><div id="all-users"></div></div>
+          <div class="tab-content" id="tab-pending"><div id="pending-users"></div></div>
+          <div class="tab-content" id="tab-add">
+            <div class="add-form">
+              <h3>Добавить в друзья</h3>
+              <p>Найдите пользователя по имени</p>
+              <div class="input-row">
+                <input type="text" id="search-input" placeholder="Имя пользователя">
+                <button class="btn primary" id="search-btn">Найти</button>
+              </div>
+              <div id="search-results"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat View -->
+      <div class="main-view" id="chat-view">
+        <div class="main-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span id="channel-name">общий</span>
+          <span class="typing" id="typing"></span>
+        </div>
+        <div class="messages" id="messages"></div>
+        <div class="reply-bar" id="reply-bar">
+          <div class="reply-info">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+            <span>Ответ для <strong class="reply-name"></strong></span>
+            <span class="reply-text"></span>
+          </div>
+          <button class="reply-close" id="reply-close">&times;</button>
+        </div>
+        <div class="message-input">
+          <button class="icon-btn" id="attach-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+          <input type="file" id="file-input" hidden>
+          <input type="text" id="msg-input" placeholder="Написать сообщение...">
+          <button class="icon-btn" id="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+      </div>
+
+      <!-- DM View -->
+      <div class="main-view" id="dm-view">
+        <div class="main-header dm-header">
+          <div class="dm-user">
+            <div class="avatar small" id="dm-header-avatar"></div>
+            <span id="dm-header-name">Пользователь</span>
+          </div>
+        </div>
+        <div class="dm-content">
+          <div class="dm-profile">
+            <div class="dm-profile-avatar" id="dm-avatar"></div>
+            <h2 class="dm-profile-name" id="dm-name">Пользователь</h2>
+            <p class="dm-profile-hint">Это начало истории ваших личных сообщений.</p>
+          </div>
+          <div class="messages" id="dm-messages"></div>
+        </div>
+        <div class="message-input">
+          <button class="icon-btn" id="dm-attach-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+          <input type="file" id="dm-file-input" hidden>
+          <input type="text" id="dm-input" placeholder="Написать сообщение...">
+          <button class="icon-btn" id="dm-send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Voice View -->
+      <div class="main-view" id="voice-view">
+        <div class="voice-room">
+          <h2 id="voice-name">Голосовой канал</h2>
+          <div class="voice-users" id="voice-users"></div>
+          <div class="voice-controls">
+            <button class="voice-btn" id="voice-mic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+            <button class="voice-btn danger" id="voice-leave"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Members Panel -->
+    <aside class="members" id="members-panel">
+      <div class="section-title">В сети - <span id="online-count">0</span></div>
+      <div id="members-online"></div>
+      <div class="section-title">Не в сети - <span id="offline-count">0</span></div>
+      <div id="members-offline"></div>
+    </aside>
+  </div>
+
+  <!-- Context Menus -->
+  <div class="context-menu" id="server-context">
+    <button data-action="invite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>Пригласить</button>
+    <button data-action="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Настройки</button>
+    <div class="divider"></div>
+    <button data-action="leave" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Покинуть</button>
+  </div>
+
+  <!-- Channel Context Menu -->
+  <div class="context-menu" id="channel-context">
+    <button data-action="edit-channel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать канал</button>
+    <button data-action="clone-channel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Клонировать канал</button>
+    <div class="divider"></div>
+    <button data-action="delete-channel" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Удалить канал</button>
+  </div>
+
+  <!-- Category Context Menu -->
+  <div class="context-menu" id="category-context">
+    <button data-action="create-channel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Создать канал</button>
+    <button data-action="edit-category"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Редактировать категорию</button>
+  </div>
+
+  <!-- Message Context Menu -->
+  <div class="context-menu message-context" id="message-context">
+    <button data-action="reply"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>Ответить</button>
+    <button data-action="forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>Переслать</button>
+    <div class="divider"></div>
+    <button data-action="copy-text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Копировать текст</button>
+    <div class="divider"></div>
+    <button data-action="delete-message" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Удалить сообщение</button>
+  </div>
+
+  <!-- Auth Screen -->
+  <div class="auth-screen active" id="auth-screen">
+    <div class="auth-bg">
+      <div class="planet planet-1"></div>
+      <div class="planet planet-2"></div>
+      <div class="stars"></div>
+    </div>
+    <div class="auth-container">
+      <div class="auth-box" id="login-box">
+        <h1>Добро пожаловать</h1>
+        <p class="auth-subtitle">Войдите в свой аккаунт MrDomestos</p>
+        <div class="auth-form">
+          <div class="auth-field">
+            <input type="email" id="login-email" placeholder="Email" required>
+          </div>
+          <div class="auth-field password-field">
+            <input type="password" id="login-pass" placeholder="Пароль" required>
+            <button type="button" class="show-pass" id="show-login-pass">Показать</button>
+          </div>
+          <a href="#" class="forgot-link">Забыли пароль?</a>
+          <button class="auth-btn" id="login-btn">Войти</button>
+          <div class="auth-divider"><span>или</span></div>
+          <button class="auth-btn secondary" id="guest-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            Войти как гость
+          </button>
+        </div>
+        <p class="auth-footer">Нет аккаунта? <a href="#" id="show-register">Создать</a></p>
+        <p class="error" id="login-error"></p>
+      </div>
+      
+      <div class="auth-box hidden" id="register-box">
+        <h1>Создать аккаунт</h1>
+        <p class="auth-subtitle">Присоединяйтесь к MrDomestos</p>
+        <div class="auth-form">
+          <div class="auth-field">
+            <input type="text" id="reg-name" placeholder="Имя пользователя" required>
+          </div>
+          <div class="auth-field">
+            <input type="email" id="reg-email" placeholder="Email" required>
+          </div>
+          <div class="auth-field password-field">
+            <input type="password" id="reg-pass" placeholder="Пароль" required>
+            <button type="button" class="show-pass" id="show-reg-pass">Показать</button>
+          </div>
+          <button class="auth-btn" id="reg-btn">Создать аккаунт</button>
+        </div>
+        <p class="auth-footer">Уже есть аккаунт? <a href="#" id="show-login">Войти</a></p>
+        <p class="error" id="reg-error"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="settings-modal">
+    <div class="modal-box large">
+      <div class="modal-header"><h2>Настройки</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="settings-layout">
+        <div class="settings-nav">
+          <button class="settings-tab active" data-settings="profile">Профиль</button>
+          <button class="settings-tab" data-settings="audio">Голос и видео</button>
+        </div>
+        <div class="settings-content">
+          <div class="settings-panel active" id="settings-profile">
+            <h3>Профиль</h3>
+            <div class="avatar-edit">
+              <div class="avatar large" id="settings-avatar"></div>
+              <div class="avatar-actions">
+                <button class="btn" id="upload-avatar">Загрузить</button>
+                <button class="btn secondary" id="remove-avatar">Удалить</button>
+              </div>
+              <input type="file" id="avatar-input" accept="image/*" style="display:none">
+            </div>
+            <div class="form-group"><label>Имя пользователя</label><input type="text" id="settings-name"></div>
+            <button class="btn primary" id="save-profile">Сохранить</button>
+          </div>
+          <div class="settings-panel" id="settings-audio">
+            <h3>Голос и видео</h3>
+            <div class="form-group">
+              <label>Устройство ввода</label>
+              <div class="custom-select" id="mic-select-wrapper">
+                <div class="custom-select-trigger" id="mic-select-trigger">
+                  <span>Выберите микрофон</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div class="custom-select-options" id="mic-select-options"></div>
+              </div>
+              <input type="hidden" id="mic-select">
+            </div>
+            <div class="form-group">
+              <label>Устройство вывода</label>
+              <div class="custom-select" id="speaker-select-wrapper">
+                <div class="custom-select-trigger" id="speaker-select-trigger">
+                  <span>Выберите динамик</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div class="custom-select-options" id="speaker-select-options"></div>
+              </div>
+              <input type="hidden" id="speaker-select">
+            </div>
+            <div class="form-group">
+              <label>Громкость микрофона</label>
+              <input type="range" id="mic-volume" min="0" max="100" value="100">
+            </div>
+            <div class="form-group mic-test-section">
+              <label>Проверка микрофона</label>
+              <p class="hint">Нажмите кнопку и говорите — вы услышите себя в наушниках</p>
+              <div class="mic-test-row">
+                <button class="btn primary" id="mic-test-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                  <span>Проверить микрофон</span>
+                </button>
+                <div class="mic-level-container">
+                  <div class="mic-level-bar" id="mic-level-bar"></div>
+                </div>
+              </div>
+            </div>
+            <button class="btn primary" id="save-audio">Сохранить</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="create-server-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Создать сервер</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="avatar-edit center">
+          <div class="avatar large" id="new-server-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+          <button class="btn" id="upload-server-icon">Загрузить иконку</button>
+          <input type="file" id="server-icon-input" accept="image/*" hidden>
+        </div>
+        <div class="form-group"><label>Название сервера</label><input type="text" id="new-server-name" placeholder="Мой сервер"></div>
+        <button class="btn primary full" id="create-server-btn">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="join-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Присоединиться</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="form-group"><label>Код приглашения</label><input type="text" id="invite-code" placeholder="Введите код"></div>
+        <button class="btn primary full" id="use-invite-btn">Присоединиться</button>
+        <p class="error" id="invite-error"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="invite-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Пригласить</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <p>Отправьте этот код другу:</p>
+        <div class="invite-code-box">
+          <input type="text" id="invite-code-display" readonly>
+          <button class="btn" id="copy-invite">Копировать</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="channel-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Создать канал</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="form-group"><label>Название канала</label><input type="text" id="new-channel-name" placeholder="новый-канал"></div>
+        <button class="btn primary full" id="create-channel-btn">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Server Settings Modal -->
+  <div class="modal" id="server-settings-modal">
+    <div class="modal-box large">
+      <div class="modal-header"><h2>Настройки сервера</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="settings-layout">
+        <div class="settings-nav">
+          <button class="settings-tab active" data-server-settings="overview">Обзор</button>
+          <button class="settings-tab" data-server-settings="members">Участники</button>
+          <button class="settings-tab danger-tab" data-server-settings="danger">Удалить сервер</button>
+        </div>
+        <div class="settings-content">
+          <div class="settings-panel active" id="server-settings-overview">
+            <h3>Обзор сервера</h3>
+            <div class="avatar-edit center">
+              <div class="avatar large" id="edit-server-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+              <button class="btn" id="change-server-icon">Изменить иконку</button>
+              <input type="file" id="edit-server-icon-input" accept="image/*" hidden>
+            </div>
+            <div class="form-group"><label>Название сервера</label><input type="text" id="edit-server-name" placeholder="Название сервера"></div>
+            <button class="btn primary" id="save-server-settings">Сохранить изменения</button>
+          </div>
+          <div class="settings-panel" id="server-settings-members">
+            <h3>Участники сервера</h3>
+            <div class="members-list" id="server-members-list"></div>
+          </div>
+          <div class="settings-panel" id="server-settings-danger">
+            <h3>Опасная зона</h3>
+            <div class="danger-zone">
+              <div class="danger-item">
+                <div class="danger-info">
+                  <h4>Удалить сервер</h4>
+                  <p>Это действие нельзя отменить. Все каналы и сообщения будут удалены.</p>
+                </div>
+                <button class="btn danger" id="delete-server-btn">Удалить сервер</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Modal -->
+  <div class="modal" id="confirm-delete-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Удалить сервер?</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <p class="warning-text">Вы уверены, что хотите удалить сервер <strong id="delete-server-name"></strong>?</p>
+        <p class="warning-text">Это действие нельзя отменить!</p>
+        <div class="form-group"><label>Введите название сервера для подтверждения</label><input type="text" id="confirm-server-name" placeholder="Название сервера"></div>
+        <div class="btn-row">
+          <button class="btn secondary" data-close>Отмена</button>
+          <button class="btn danger" id="confirm-delete-btn" disabled>Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Delete Channel Modal -->
+  <div class="modal" id="confirm-delete-channel-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Удалить канал</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <p class="warning-text">Вы уверены, что хотите удалить канал <strong id="delete-channel-name"></strong>?</p>
+        <p class="warning-text">Все сообщения будут удалены безвозвратно.</p>
+        <div class="btn-row">
+          <button class="btn secondary" data-close>Отмена</button>
+          <button class="btn danger" id="confirm-delete-channel-btn">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forward Message Modal -->
+  <div class="modal" id="forward-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Переслать сообщение</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="forward-preview">
+          <div class="forward-msg" id="forward-msg-preview"></div>
+        </div>
+        <div class="form-group">
+          <label>Выберите куда переслать</label>
+          <div class="forward-list" id="forward-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Channel Modal -->
+  <div class="modal" id="edit-channel-modal">
+    <div class="modal-box large">
+      <div class="modal-header"><h2>Настройки канала</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="settings-layout">
+        <div class="settings-nav">
+          <button class="settings-tab active" data-channel-settings="overview">Обзор</button>
+          <button class="settings-tab" data-channel-settings="permissions">Права доступа</button>
+          <div class="settings-nav-divider"></div>
+          <button class="settings-tab danger-tab" id="delete-channel-from-settings">Удалить канал</button>
+        </div>
+        <div class="settings-content">
+          <div class="settings-panel active" id="channel-settings-overview">
+            <h3>Обзор</h3>
+            <div class="form-group">
+              <label>Название канала</label>
+              <input type="text" id="edit-channel-name" placeholder="название-канала">
+            </div>
+            <button class="btn primary" id="save-channel-settings">Сохранить</button>
+          </div>
+          <div class="settings-panel" id="channel-settings-permissions">
+            <h3>Права доступа</h3>
+            <p class="hint-text">Настройте кто может видеть и писать в этот канал.</p>
+            <div class="permissions-list">
+              <div class="permission-item">
+                <div class="permission-info">
+                  <span class="permission-name">@everyone</span>
+                  <span class="permission-desc">Все участники сервера</span>
+                </div>
+                <div class="permission-toggles">
+                  <label class="toggle-label">
+                    <input type="checkbox" checked id="perm-everyone-view">
+                    <span>Просмотр</span>
+                  </label>
+                  <label class="toggle-label">
+                    <input type="checkbox" checked id="perm-everyone-send">
+                    <span>Отправка</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
