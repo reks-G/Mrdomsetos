@@ -8,8 +8,13 @@ function qSA(s){return document.querySelectorAll(s);}
 function escapeHtml(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML;}
 function displayStatus(s){return{online:'В сети',idle:'Не активен',dnd:'Не беспокоить',invisible:'Невидимый',offline:'Не в сети'}[s]||'В сети';}
 function send(d){if(state.ws&&state.ws.readyState===1){state.ws.send(JSON.stringify(d));return true;}return false;}
-function connect(){console.log('Connecting to', WS_URL);state.ws=new WebSocket(WS_URL);state.ws.onopen=function(){console.log('Connected');setTimeout(tryAutoLogin,100);};state.ws.onclose=function(){console.log('Disconnected');setTimeout(connect,3000);};state.ws.onerror=function(e){console.error('WS error',e);};state.ws.onmessage=function(e){handleMessage(JSON.parse(e.data));};}
-function tryAutoLogin(){var email=localStorage.getItem('lastEmail');var pwd=localStorage.getItem('lastPwd');console.log('tryAutoLogin',email?'has email':'no email');if(email&&pwd){send({type:'login',email:email,password:pwd});}}function showView(id){qSA('.main-view').forEach(function(v){v.classList.remove('active');});var el=document.getElementById(id);if(el)el.classList.add('active');}
+function connect(){console.log('Connecting to', WS_URL);showConnecting();state.ws=new WebSocket(WS_URL);state.ws.onopen=function(){console.log('Connected');hideConnecting();setTimeout(tryAutoLogin,100);startPing();};state.ws.onclose=function(){console.log('Disconnected');stopPing();setTimeout(connect,3000);};state.ws.onerror=function(e){console.error('WS error',e);};state.ws.onmessage=function(e){handleMessage(JSON.parse(e.data));};}
+function tryAutoLogin(){var email=localStorage.getItem('lastEmail');var pwd=localStorage.getItem('lastPwd');console.log('tryAutoLogin',email?'has email':'no email');if(email&&pwd){send({type:'login',email:email,password:pwd});}}
+var pingInterval=null;
+function startPing(){stopPing();pingInterval=setInterval(function(){if(state.ws&&state.ws.readyState===1){state.ws.send(JSON.stringify({type:'ping'}));}},25000);}
+function stopPing(){if(pingInterval){clearInterval(pingInterval);pingInterval=null;}}
+function showConnecting(){var el=qS('#connecting-overlay');if(!el){el=document.createElement('div');el.id='connecting-overlay';el.innerHTML='<div class="connecting-box"><div class="connecting-spinner"></div><div class="connecting-text">Подключение к серверу...</div><div class="connecting-hint">Первое подключение может занять до 30 секунд</div></div>';document.body.appendChild(el);}el.classList.add('visible');}
+function hideConnecting(){var el=qS('#connecting-overlay');if(el)el.classList.remove('visible');}function showView(id){qSA('.main-view').forEach(function(v){v.classList.remove('active');});var el=document.getElementById(id);if(el)el.classList.add('active');}
 function openModal(id){var el=document.getElementById(id);if(el)el.classList.add('active');}
 function closeModal(id){var el=document.getElementById(id);if(el)el.classList.remove('active');}
 function hideContextMenu(){qSA('.context-menu').forEach(function(m){m.classList.remove('visible');});}

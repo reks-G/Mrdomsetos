@@ -1807,3 +1807,45 @@ body::before {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* Connecting overlay */
+#connecting-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 5, 8, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+}
+#connecting-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+.connecting-box {
+  text-align: center;
+}
+.connecting-spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.connecting-text {
+  font-size: 18px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+.connecting-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+}

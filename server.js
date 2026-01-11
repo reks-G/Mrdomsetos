@@ -205,6 +205,11 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(raw);
 
       switch (data.type) {
+        case 'ping': {
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+        }
+
         case 'register': {
           const { email, password, name } = data;
           if (accounts.has(email)) {
