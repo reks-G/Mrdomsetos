@@ -1849,3 +1849,16 @@ body::before {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* Pending message */
+.message.pending {
+  opacity: 0.6;
+}
+.message.pending .time::after {
+  content: ' •';
+  animation: pulse 1s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
