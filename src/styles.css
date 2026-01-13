@@ -488,6 +488,7 @@ body::before {
 
 .user-item .actions { display: flex; gap: 8px; opacity: 0; transition: all 0.2s; position: relative; z-index: 1; }
 .user-item:hover .actions { opacity: 1; }
+#pending-users .user-item .actions { opacity: 1; }
 .user-item .actions button {
   width: 40px;
   height: 40px;
