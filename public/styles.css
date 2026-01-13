@@ -1988,3 +1988,39 @@ body::before {
   font-size: 10px; padding: 2px 6px; border-radius: var(--radius-full);
   background: var(--bg-glass); margin-left: 6px;
 }
+
+
+/* Voice Channel Users */
+.voice-channel-wrapper { margin-bottom: 4px; }
+.voice-channel-users { 
+  padding-left: 32px; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 2px;
+  margin-top: 2px;
+}
+.voice-channel-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.voice-channel-user:hover { background: var(--bg-glass); }
+.voice-channel-user.muted { opacity: 0.6; }
+.voice-user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-glass);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  overflow: hidden;
+}
+.voice-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.voice-user-name { flex: 1; }
+.mute-icon { width: 14px; height: 14px; color: var(--danger); }

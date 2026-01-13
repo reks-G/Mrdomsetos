@@ -351,7 +351,7 @@ function getVoiceUsers(serverId, channelId) {
   voiceState.forEach((data, oderId) => {
     if (data.serverId === serverId && data.channelId === channelId) {
       const user = getUserData(oderId);
-      if (user) result.push({ oderId, oderId, ...user, muted: data.muted, video: data.video, screen: data.screen });
+      if (user) result.push({ oderId: oderId, ...user, muted: data.muted, video: data.video, screen: data.screen });
     }
   });
   return result;

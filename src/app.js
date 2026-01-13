@@ -23,6 +23,7 @@ var state = {
   dmMessages: new Map(),
   dmChats: new Set(),
   voiceChannel: null,
+  voiceUsers: new Map(),
   localStream: null,
   replyingTo: null,
   editingMessage: null,
@@ -30,6 +31,8 @@ var state = {
   editServerIcon: null,
   editingServerId: null,
   editingChannelId: null,
+  editingMemberId: null,
+  editingRoleId: null,
   creatingVoice: false,
   forwardingMessage: null,
   searchResults: [],
@@ -580,17 +583,20 @@ function handleMessage(msg) {
     },
     
     voice_state_update: function() {
+      // Save voice users for this channel
+      state.voiceUsers.set(msg.channelId, msg.users || []);
+      
       // Update voice users display
       if (state.currentServer === msg.serverId) {
         renderVoiceUsers(msg.channelId, msg.users);
+        renderChannels();
         
         // Initiate calls to new users in the channel
         if (state.voiceChannel === msg.channelId && msg.users) {
           msg.users.forEach(function(u) {
-            if (u.oderId !== state.userId && !peerConnections.has(u.oderId)) {
-              // Small delay to avoid race conditions
+            if (u.id !== state.userId && !peerConnections.has(u.id)) {
               setTimeout(function() {
-                initiateCall(u.oderId);
+                initiateCall(u.id);
               }, 500);
             }
           });
@@ -714,10 +720,26 @@ function renderChannels() {
   
   var vh = '';
   (srv.voiceChannels || []).forEach(function(vc) {
+    var voiceUsers = state.voiceUsers.get(vc.id) || [];
+    vh += '<div class="voice-channel-wrapper">';
     vh += '<div class="voice-item' + (state.voiceChannel === vc.id ? ' connected' : '') + '" data-id="' + vc.id + '">';
     vh += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>';
     vh += '<span>' + escapeHtml(vc.name) + '</span>';
     if (vc.isTemporary) vh += '<span class="temp-badge">temp</span>';
+    vh += '</div>';
+    
+    // Show users in voice channel
+    if (voiceUsers.length > 0) {
+      vh += '<div class="voice-channel-users">';
+      voiceUsers.forEach(function(u) {
+        vh += '<div class="voice-channel-user' + (u.muted ? ' muted' : '') + '">';
+        vh += '<div class="voice-user-avatar">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>';
+        vh += '<span class="voice-user-name">' + escapeHtml(u.name || 'User') + '</span>';
+        if (u.muted) vh += '<svg class="mute-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>';
+        vh += '</div>';
+      });
+      vh += '</div>';
+    }
     vh += '</div>';
   });
   vl.innerHTML = vh;
@@ -2201,6 +2223,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var micTestBtn = qS('#mic-test-btn');
   var micTestStream = null;
   var micTestContext = null;
+  var micTestAudio = null;
   
   if (micTestBtn) {
     micTestBtn.onclick = function() {
@@ -2209,6 +2232,10 @@ document.addEventListener('DOMContentLoaded', function() {
         micTestStream = null;
         if (micTestContext) micTestContext.close();
         micTestContext = null;
+        if (micTestAudio) {
+          micTestAudio.srcObject = null;
+          micTestAudio = null;
+        }
         micTestBtn.querySelector('span').textContent = 'Проверить микрофон';
         qS('#mic-level-bar').style.width = '0%';
         return;
@@ -2217,6 +2244,11 @@ document.addEventListener('DOMContentLoaded', function() {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
         micTestStream = stream;
         micTestBtn.querySelector('span').textContent = 'Остановить';
+        
+        // Play audio back to hear yourself
+        micTestAudio = new Audio();
+        micTestAudio.srcObject = stream;
+        micTestAudio.play();
         
         micTestContext = new AudioContext();
         var analyser = micTestContext.createAnalyser();
