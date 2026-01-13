@@ -133,6 +133,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span id="channel-name">общий</span>
           <span class="typing" id="typing"></span>
+          <div class="header-actions">
+            <button class="icon-btn" id="search-channel-btn" title="Поиск"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+          </div>
         </div>
         <div class="messages" id="messages"></div>
         <div class="reply-bar" id="reply-bar">
@@ -412,7 +415,9 @@
       <div class="settings-layout">
         <div class="settings-nav">
           <button class="settings-tab active" data-server-settings="overview">Обзор</button>
+          <button class="settings-tab" data-server-settings="roles">Роли</button>
           <button class="settings-tab" data-server-settings="members">Участники</button>
+          <button class="settings-tab" data-server-settings="bans">Баны</button>
           <button class="settings-tab danger-tab" data-server-settings="danger">Удалить сервер</button>
         </div>
         <div class="settings-content">
@@ -426,9 +431,23 @@
             <div class="form-group"><label>Название сервера</label><input type="text" id="edit-server-name" placeholder="Название сервера"></div>
             <button class="btn primary" id="save-server-settings">Сохранить изменения</button>
           </div>
+          <div class="settings-panel" id="server-settings-roles">
+            <h3>Роли сервера</h3>
+            <div class="roles-header">
+              <button class="btn primary" id="create-role-btn">+ Создать роль</button>
+            </div>
+            <div class="roles-list" id="roles-list"></div>
+          </div>
           <div class="settings-panel" id="server-settings-members">
             <h3>Участники сервера</h3>
+            <div class="members-search">
+              <input type="text" id="members-search-input" placeholder="Поиск участников...">
+            </div>
             <div class="members-list" id="server-members-list"></div>
+          </div>
+          <div class="settings-panel" id="server-settings-bans">
+            <h3>Забаненные пользователи</h3>
+            <div class="bans-list" id="bans-list"><div class="empty">Нет забаненных пользователей</div></div>
           </div>
           <div class="settings-panel" id="server-settings-danger">
             <h3>Опасная зона</h3>
@@ -538,6 +557,98 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Role Edit Modal -->
+  <div class="modal" id="role-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2 id="role-modal-title">Создать роль</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="form-group">
+          <label>Название роли</label>
+          <input type="text" id="role-name-input" placeholder="Новая роль">
+        </div>
+        <div class="form-group">
+          <label>Цвет роли</label>
+          <div class="color-picker">
+            <input type="color" id="role-color-input" value="#99aab5">
+            <span id="role-color-preview" style="background: #99aab5"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Права доступа</label>
+          <div class="permissions-checkboxes">
+            <label class="checkbox-label"><input type="checkbox" id="perm-send-messages" checked><span>Отправка сообщений</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="perm-manage-messages"><span>Управление сообщениями</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="perm-manage-channels"><span>Управление каналами</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="perm-kick"><span>Исключение участников</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="perm-ban"><span>Бан участников</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="perm-manage-roles"><span>Управление ролями</span></label>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn secondary" data-close>Отмена</button>
+          <button class="btn primary" id="save-role-btn">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member Actions Modal -->
+  <div class="modal" id="member-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Управление участником</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="member-profile">
+          <div class="avatar large" id="member-modal-avatar"></div>
+          <div class="member-modal-name" id="member-modal-name">Участник</div>
+        </div>
+        <div class="form-group">
+          <label>Назначить роль</label>
+          <select id="member-role-select" class="form-select"></select>
+        </div>
+        <div class="btn-row">
+          <button class="btn secondary" data-close>Закрыть</button>
+          <button class="btn primary" id="assign-role-btn">Назначить роль</button>
+        </div>
+        <div class="member-actions-danger">
+          <button class="btn danger-outline" id="kick-member-btn">Исключить</button>
+          <button class="btn danger" id="ban-member-btn">Забанить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Modal -->
+  <div class="modal" id="search-modal">
+    <div class="modal-box large">
+      <div class="modal-header"><h2>Поиск</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="search-input-row">
+          <input type="text" id="global-search-input" placeholder="Поиск сообщений...">
+          <button class="btn primary" id="global-search-btn">Найти</button>
+        </div>
+        <div class="search-results" id="global-search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Emoji Picker -->
+  <div class="emoji-picker" id="emoji-picker">
+    <div class="emoji-grid">
+      <button class="emoji-btn" data-emoji="👍">👍</button>
+      <button class="emoji-btn" data-emoji="👎">👎</button>
+      <button class="emoji-btn" data-emoji="❤️">❤️</button>
+      <button class="emoji-btn" data-emoji="😂">😂</button>
+      <button class="emoji-btn" data-emoji="😮">😮</button>
+      <button class="emoji-btn" data-emoji="😢">😢</button>
+      <button class="emoji-btn" data-emoji="😡">😡</button>
+      <button class="emoji-btn" data-emoji="🎉">🎉</button>
+      <button class="emoji-btn" data-emoji="🔥">🔥</button>
+      <button class="emoji-btn" data-emoji="💯">💯</button>
+      <button class="emoji-btn" data-emoji="✅">✅</button>
+      <button class="emoji-btn" data-emoji="❌">❌</button>
     </div>
   </div>
 

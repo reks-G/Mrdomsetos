@@ -511,6 +511,7 @@ function handleMessage(msg) {
       var srv = state.servers.get(msg.serverId);
       if (srv) srv.membersData = msg.members;
       if (state.currentServer === msg.serverId) renderMembers();
+      if (state.editingServerId === msg.serverId) renderServerMembersList();
     },
     
     member_joined: function() {
@@ -547,6 +548,7 @@ function handleMessage(msg) {
       var srv = state.servers.get(msg.serverId);
       if (srv) {
         srv.roles.push(msg.role);
+        if (state.editingServerId === msg.serverId) renderRoles();
       }
     },
     
@@ -555,6 +557,7 @@ function handleMessage(msg) {
       if (srv) {
         var idx = srv.roles.findIndex(function(r) { return r.id === msg.role.id; });
         if (idx !== -1) srv.roles[idx] = msg.role;
+        if (state.editingServerId === msg.serverId) renderRoles();
       }
     },
     
@@ -562,6 +565,7 @@ function handleMessage(msg) {
       var srv = state.servers.get(msg.serverId);
       if (srv) {
         srv.roles = srv.roles.filter(function(r) { return r.id !== msg.roleId; });
+        if (state.editingServerId === msg.serverId) renderRoles();
       }
     },
     
@@ -853,7 +857,137 @@ function renderVoiceUsers(channelId, users) {
 }
 
 function renderSearchResults() {
-  // Implement search results rendering
+  var sr = qS('#global-search-results');
+  if (!sr) return;
+  
+  if (!state.searchResults || state.searchResults.length === 0) {
+    sr.innerHTML = '<div class="empty">Ничего не найдено</div>';
+    return;
+  }
+  
+  var srv = state.servers.get(state.currentServer);
+  sr.innerHTML = state.searchResults.map(function(r) {
+    var ch = srv ? srv.channels.find(function(c) { return c.id === r.channelId; }) : null;
+    return '<div class="search-result-item" data-channel="' + r.channelId + '" data-msg="' + r.id + '">' +
+      '<div class="search-result-channel">#' + (ch ? escapeHtml(ch.name) : r.channelId) + ' • ' + formatTime(r.time) + '</div>' +
+      '<div class="search-result-author">' + escapeHtml(r.author) + '</div>' +
+      '<div class="search-result-text">' + escapeHtml(r.text) + '</div></div>';
+  }).join('');
+  
+  sr.querySelectorAll('.search-result-item').forEach(function(item) {
+    item.onclick = function() {
+      openChannel(item.dataset.channel);
+      closeModal('search-modal');
+      setTimeout(function() {
+        var msg = qS('.message[data-id="' + item.dataset.msg + '"]');
+        if (msg) {
+          msg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          msg.classList.add('highlighted');
+          setTimeout(function() { msg.classList.remove('highlighted'); }, 2000);
+        }
+      }, 100);
+    };
+  });
+}
+
+function renderRoles() {
+  var rl = qS('#roles-list');
+  if (!rl) return;
+  
+  var srv = state.servers.get(state.editingServerId);
+  if (!srv || !srv.roles) {
+    rl.innerHTML = '<div class="empty">Нет ролей</div>';
+    return;
+  }
+  
+  rl.innerHTML = srv.roles.map(function(role) {
+    var isDefault = role.id === 'owner' || role.id === 'default';
+    return '<div class="role-item" data-id="' + role.id + '">' +
+      '<div class="role-info">' +
+      '<div class="role-color" style="background: ' + (role.color || '#99aab5') + '"></div>' +
+      '<span class="role-name">' + escapeHtml(role.name) + '</span>' +
+      '</div>' +
+      '<div class="role-actions">' +
+      (isDefault ? '' : '<button class="btn secondary edit-role-btn" data-id="' + role.id + '">Изменить</button>') +
+      (isDefault ? '' : '<button class="btn danger delete-role-btn" data-id="' + role.id + '">Удалить</button>') +
+      '</div></div>';
+  }).join('');
+  
+  rl.querySelectorAll('.edit-role-btn').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      var role = srv.roles.find(function(r) { return r.id === btn.dataset.id; });
+      if (role) {
+        state.editingRoleId = role.id;
+        qS('#role-modal-title').textContent = 'Редактировать роль';
+        qS('#role-name-input').value = role.name;
+        qS('#role-color-input').value = role.color || '#99aab5';
+        qS('#role-color-preview').style.background = role.color || '#99aab5';
+        setPermissionCheckboxes(role.permissions || []);
+        openModal('role-modal');
+      }
+    };
+  });
+  
+  rl.querySelectorAll('.delete-role-btn').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      if (confirm('Удалить роль?')) {
+        send({ type: 'delete_role', serverId: state.editingServerId, roleId: btn.dataset.id });
+      }
+    };
+  });
+}
+
+function renderServerMembersList() {
+  var ml = qS('#server-members-list');
+  if (!ml) return;
+  
+  var srv = state.servers.get(state.editingServerId);
+  if (!srv || !srv.membersData) {
+    ml.innerHTML = '<div class="empty">Загрузка...</div>';
+    return;
+  }
+  
+  ml.innerHTML = srv.membersData.map(function(m) {
+    var role = srv.roles ? srv.roles.find(function(r) { return r.id === (srv.memberRoles[m.id] || 'default'); }) : null;
+    return '<div class="member-item clickable" data-id="' + m.id + '">' +
+      '<div class="avatar ' + (m.status || 'offline') + '">' + (m.avatar ? '<img src="' + m.avatar + '">' : (m.name ? m.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+      '<div class="member-info">' +
+      '<span class="member-name">' + escapeHtml(m.name) + (m.isOwner ? ' 👑' : '') + '</span>' +
+      (role ? '<span class="role-badge" style="background: ' + (role.color || '#99aab5') + '22; color: ' + (role.color || '#99aab5') + '">' + escapeHtml(role.name) + '</span>' : '') +
+      '</div></div>';
+  }).join('');
+  
+  ml.querySelectorAll('.member-item').forEach(function(item) {
+    item.onclick = function() {
+      var memberId = item.dataset.id;
+      var member = srv.membersData.find(function(m) { return m.id === memberId; });
+      if (member && !member.isOwner && memberId !== state.userId) {
+        openMemberModal(member, srv);
+      }
+    };
+  });
+}
+
+function openMemberModal(member, srv) {
+  state.editingMemberId = member.id;
+  qS('#member-modal-name').textContent = member.name;
+  var av = qS('#member-modal-avatar');
+  if (av) {
+    if (member.avatar) av.innerHTML = '<img src="' + member.avatar + '">';
+    else av.textContent = member.name.charAt(0).toUpperCase();
+  }
+  
+  var select = qS('#member-role-select');
+  if (select && srv.roles) {
+    select.innerHTML = srv.roles.filter(function(r) { return r.id !== 'owner'; }).map(function(r) {
+      var selected = (srv.memberRoles[member.id] || 'default') === r.id ? ' selected' : '';
+      return '<option value="' + r.id + '"' + selected + '>' + escapeHtml(r.name) + '</option>';
+    }).join('');
+  }
+  
+  openModal('member-modal');
 }
 
 
@@ -1491,6 +1625,8 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       openModal('server-settings-modal');
       send({ type: 'get_server_members', serverId: state.editingServerId });
+      renderRoles();
+      setTimeout(renderServerMembersList, 500);
     };
     serverCtx.querySelector('[data-action="leave"]').onclick = function() {
       if (confirm('Покинуть сервер?')) {
@@ -1927,6 +2063,140 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
   });
+  
+  // ============ ROLES UI ============
+  var createRoleBtn = qS('#create-role-btn');
+  if (createRoleBtn) {
+    createRoleBtn.onclick = function() {
+      state.editingRoleId = null;
+      qS('#role-modal-title').textContent = 'Создать роль';
+      qS('#role-name-input').value = '';
+      qS('#role-color-input').value = '#99aab5';
+      qS('#role-color-preview').style.background = '#99aab5';
+      resetPermissionCheckboxes();
+      openModal('role-modal');
+    };
+  }
+  
+  var roleColorInput = qS('#role-color-input');
+  if (roleColorInput) {
+    roleColorInput.oninput = function() {
+      qS('#role-color-preview').style.background = roleColorInput.value;
+    };
+  }
+  
+  var saveRoleBtn = qS('#save-role-btn');
+  if (saveRoleBtn) {
+    saveRoleBtn.onclick = function() {
+      var name = qS('#role-name-input').value.trim();
+      var color = qS('#role-color-input').value;
+      var permissions = getSelectedPermissions();
+      
+      if (!name) return;
+      
+      if (state.editingRoleId) {
+        send({ type: 'update_role', serverId: state.editingServerId, roleId: state.editingRoleId, name: name, color: color, permissions: permissions });
+      } else {
+        send({ type: 'create_role', serverId: state.editingServerId, name: name, color: color, permissions: permissions });
+      }
+      closeModal('role-modal');
+    };
+  }
+  
+  function resetPermissionCheckboxes() {
+    qS('#perm-send-messages').checked = true;
+    qS('#perm-manage-messages').checked = false;
+    qS('#perm-manage-channels').checked = false;
+    qS('#perm-kick').checked = false;
+    qS('#perm-ban').checked = false;
+    qS('#perm-manage-roles').checked = false;
+  }
+  
+  function getSelectedPermissions() {
+    var perms = [];
+    if (qS('#perm-send-messages').checked) perms.push('send_messages');
+    if (qS('#perm-manage-messages').checked) perms.push('manage_messages');
+    if (qS('#perm-manage-channels').checked) perms.push('manage_channels');
+    if (qS('#perm-kick').checked) perms.push('kick');
+    if (qS('#perm-ban').checked) perms.push('ban');
+    if (qS('#perm-manage-roles').checked) perms.push('manage_roles');
+    return perms;
+  }
+  
+  function setPermissionCheckboxes(perms) {
+    qS('#perm-send-messages').checked = perms.includes('send_messages');
+    qS('#perm-manage-messages').checked = perms.includes('manage_messages');
+    qS('#perm-manage-channels').checked = perms.includes('manage_channels');
+    qS('#perm-kick').checked = perms.includes('kick');
+    qS('#perm-ban').checked = perms.includes('ban');
+    qS('#perm-manage-roles').checked = perms.includes('manage_roles');
+  }
+  
+  // ============ MEMBER MANAGEMENT ============
+  var assignRoleBtn = qS('#assign-role-btn');
+  if (assignRoleBtn) {
+    assignRoleBtn.onclick = function() {
+      var roleId = qS('#member-role-select').value;
+      if (roleId && state.editingMemberId) {
+        send({ type: 'assign_role', serverId: state.editingServerId, memberId: state.editingMemberId, roleId: roleId });
+        closeModal('member-modal');
+        showNotification('Роль назначена');
+      }
+    };
+  }
+  
+  var kickMemberBtn = qS('#kick-member-btn');
+  if (kickMemberBtn) {
+    kickMemberBtn.onclick = function() {
+      if (state.editingMemberId && confirm('Исключить участника?')) {
+        send({ type: 'kick_member', serverId: state.editingServerId, memberId: state.editingMemberId });
+        closeModal('member-modal');
+      }
+    };
+  }
+  
+  var banMemberBtn = qS('#ban-member-btn');
+  if (banMemberBtn) {
+    banMemberBtn.onclick = function() {
+      if (state.editingMemberId && confirm('Забанить участника?')) {
+        send({ type: 'ban_member', serverId: state.editingServerId, memberId: state.editingMemberId });
+        closeModal('member-modal');
+      }
+    };
+  }
+  
+  // ============ SEARCH ============
+  var searchChannelBtn = qS('#search-channel-btn');
+  if (searchChannelBtn) {
+    searchChannelBtn.onclick = function() {
+      openModal('search-modal');
+      qS('#global-search-input').value = '';
+      qS('#global-search-results').innerHTML = '';
+      qS('#global-search-input').focus();
+    };
+  }
+  
+  var globalSearchBtn = qS('#global-search-btn');
+  if (globalSearchBtn) {
+    globalSearchBtn.onclick = function() {
+      var query = qS('#global-search-input').value.trim();
+      if (query && state.currentServer) {
+        send({ type: 'search_messages', serverId: state.currentServer, query: query });
+      }
+    };
+  }
+  
+  var globalSearchInput = qS('#global-search-input');
+  if (globalSearchInput) {
+    globalSearchInput.onkeypress = function(e) {
+      if (e.key === 'Enter') {
+        var query = globalSearchInput.value.trim();
+        if (query && state.currentServer) {
+          send({ type: 'search_messages', serverId: state.currentServer, query: query });
+        }
+      }
+    };
+  }
   
   // Connect
   connect();
