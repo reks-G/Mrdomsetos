@@ -592,12 +592,19 @@ function handleMessage(msg) {
         renderChannels();
         
         // Initiate calls to new users in the channel
+        // Only the user with "lower" ID initiates to avoid glare (both calling each other)
         if (state.voiceChannel === msg.channelId && msg.users) {
           msg.users.forEach(function(u) {
             if (u.id !== state.userId && !peerConnections.has(u.id)) {
-              setTimeout(function() {
-                initiateCall(u.id);
-              }, 500);
+              // Only initiate if our ID is "lower" (alphabetically)
+              if (state.userId < u.id) {
+                console.log('Initiating call to:', u.id, '(we are lower ID)');
+                setTimeout(function() {
+                  initiateCall(u.id);
+                }, 500);
+              } else {
+                console.log('Waiting for call from:', u.id, '(they have lower ID)');
+              }
             }
           });
         }
@@ -1408,11 +1415,34 @@ function createPeerConnection(oderId) {
   
   // Handle incoming tracks
   pc.ontrack = function(event) {
+    console.log('Received remote track from:', oderId);
+    
+    // Remove existing audio element if any
+    var existingAudio = document.getElementById('audio-' + oderId);
+    if (existingAudio) existingAudio.remove();
+    
     var audio = document.createElement('audio');
     audio.id = 'audio-' + oderId;
     audio.srcObject = event.streams[0];
     audio.autoplay = true;
+    audio.playsInline = true;
+    audio.volume = 1.0;
     document.body.appendChild(audio);
+    
+    // Force play with user interaction workaround
+    var playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.then(function() {
+        console.log('Audio playing for:', oderId);
+      }).catch(function(err) {
+        console.error('Audio play error:', err);
+        // Try to play on next user interaction
+        document.addEventListener('click', function playOnClick() {
+          audio.play();
+          document.removeEventListener('click', playOnClick);
+        }, { once: true });
+      });
+    }
     
     // Setup audio analyser for remote user speaking detection
     setupAudioAnalyser(event.streams[0], oderId);
