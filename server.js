@@ -354,9 +354,11 @@ wss.on('connection', (ws) => {
 
         case 'dm': {
           const user = users.get(userId);
+          const targetUser = users.get(data.to);
+          const targetAcc = [...accounts.values()].find(a => a.id === data.to);
           const msg = { id: Date.now(), from: userId, to: data.to, author: user?.name, avatar: user?.avatar, text: data.text, time: Date.now() };
-          sendTo(data.to, { type: 'dm', message: msg });
-          ws.send(JSON.stringify({ type: 'dm_sent', to: data.to, message: msg }));
+          sendTo(data.to, { type: 'dm', message: msg, sender: { id: userId, name: user?.name, avatar: user?.avatar, status: 'online' } });
+          ws.send(JSON.stringify({ type: 'dm_sent', to: data.to, message: msg, recipient: { id: data.to, name: targetAcc?.name || targetUser?.name, avatar: targetAcc?.avatar || targetUser?.avatar, status: targetUser ? 'online' : 'offline' } }));
           break;
         }
 
@@ -674,7 +676,8 @@ wss.on('connection', (ws) => {
           if (!srv) return;
           const memberList = [...srv.members].map(id => {
             const acc = [...accounts.values()].find(a => a.id === id);
-            const isOnline = users.has(id);
+            // User is online if in users Map OR if it's the requesting user (they're obviously online)
+            const isOnline = users.has(id) || id === userId;
             return acc ? { id, name: acc.name, avatar: acc.avatar, status: isOnline ? 'online' : 'offline', role: srv.memberRoles[id], isOwner: srv.ownerId === id } : null;
           }).filter(Boolean);
           

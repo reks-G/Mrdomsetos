@@ -66,7 +66,14 @@ function createWindow() {
 }
 
 function createTray() {
-  const icon = nativeImage.createEmpty();
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  let icon;
+  try {
+    icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) icon = nativeImage.createEmpty();
+  } catch (e) {
+    icon = nativeImage.createEmpty();
+  }
   tray = new Tray(icon);
   
   const contextMenu = Menu.buildFromTemplate([

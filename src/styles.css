@@ -310,7 +310,11 @@ body::before {
   font-weight: 600;
   position: relative;
   z-index: 1;
+  flex-shrink: 0;
 }
+.dm-item .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.dm-item .avatar.online::after { content: ''; position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background: var(--success); border-radius: 50%; border: 2px solid var(--bg-primary); }
+.dm-item .avatar.offline::after { content: ''; position: absolute; bottom: 0; right: 0; width: 10px; height: 10px; background: var(--text-muted); border-radius: 50%; border: 2px solid var(--bg-primary); }
 
 /* User Panel - Glass */
 .user-panel {
@@ -1014,7 +1018,10 @@ body::before {
 }
 .btn.primary:hover { box-shadow: 0 8px 30px rgba(168, 85, 247, 0.4); transform: translateY(-2px); }
 .btn.secondary { background: transparent; }
+.btn.danger { background: linear-gradient(135deg, #dc2626, #ef4444); border: none; box-shadow: 0 4px 20px rgba(220, 38, 38, 0.3); }
+.btn.danger:hover { box-shadow: 0 8px 30px rgba(220, 38, 38, 0.4); transform: translateY(-2px); }
 .btn.full { width: 100%; }
+.signout-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border); }
 .error { color: var(--danger); font-size: 13px; margin-top: 14px; text-align: center; }
 .input-row { display: flex; gap: 12px; }
 .input-row input { flex: 1; }
