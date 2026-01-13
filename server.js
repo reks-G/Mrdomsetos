@@ -35,19 +35,36 @@ const dmHistory = new Map();
 const onlineUsers = new Map();
 const voiceState = new Map();
 const invites = new Map();
+const blockedUsers = new Map();
+const userSettings = new Map();
 
-// Load servers with Set for members
+// Load servers
 Object.entries(loadJSON(SERVERS_FILE)).forEach(([id, srv]) => {
-  servers.set(id, { ...srv, members: new Set(srv.members || []) });
+  servers.set(id, {
+    ...srv,
+    members: new Set(srv.members || []),
+    roles: srv.roles || [
+      { id: 'owner', name: 'Владелец', color: '#f1c40f', position: 100, permissions: ['all'] },
+      { id: 'admin', name: 'Админ', color: '#e74c3c', position: 50, permissions: ['manage_channels', 'kick', 'ban', 'manage_messages'] },
+      { id: 'moderator', name: 'Модератор', color: '#3498db', position: 25, permissions: ['manage_messages', 'kick'] },
+      { id: 'default', name: 'Участник', color: '#99aab5', position: 0, permissions: ['send_messages', 'read_messages'] }
+    ],
+    memberRoles: srv.memberRoles || {},
+    bans: new Set(srv.bans || [])
+  });
 });
 
+
 // Load friends
-const friendsData = loadJSON(FRIENDS_FILE, { friends: {}, requests: {} });
+const friendsData = loadJSON(FRIENDS_FILE, { friends: {}, requests: {}, blocked: {} });
 Object.entries(friendsData.friends || {}).forEach(([id, arr]) => {
   friends.set(id, new Set(arr));
 });
 Object.entries(friendsData.requests || {}).forEach(([id, arr]) => {
   friendRequests.set(id, new Set(arr));
+});
+Object.entries(friendsData.blocked || {}).forEach(([id, arr]) => {
+  blockedUsers.set(id, new Set(arr));
 });
 
 // Load DM history
@@ -57,26 +74,24 @@ Object.entries(loadJSON(DM_FILE)).forEach(([key, msgs]) => {
 
 // ============ SAVE ============
 function saveAll() {
-  // Accounts
   const accObj = {};
   accounts.forEach((v, k) => { accObj[k] = v; });
   saveJSON(ACCOUNTS_FILE, accObj);
   
-  // Servers
   const srvObj = {};
   servers.forEach((srv, id) => {
-    srvObj[id] = { ...srv, members: [...srv.members] };
+    srvObj[id] = { ...srv, members: [...srv.members], bans: [...(srv.bans || [])] };
   });
   saveJSON(SERVERS_FILE, srvObj);
   
-  // Friends
   const frObj = {};
   friends.forEach((set, id) => { frObj[id] = [...set]; });
   const reqObj = {};
   friendRequests.forEach((set, id) => { reqObj[id] = [...set]; });
-  saveJSON(FRIENDS_FILE, { friends: frObj, requests: reqObj });
+  const blkObj = {};
+  blockedUsers.forEach((set, id) => { blkObj[id] = [...set]; });
+  saveJSON(FRIENDS_FILE, { friends: frObj, requests: reqObj, blocked: blkObj });
   
-  // DM
   const dmObj = {};
   dmHistory.forEach((msgs, key) => { dmObj[key] = msgs; });
   saveJSON(DM_FILE, dmObj);
@@ -92,7 +107,7 @@ function hash(str) {
 }
 
 function genId(prefix = 'id') {
-  return prefix + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 }
 
 function genInvite() {
@@ -117,6 +132,56 @@ function getAccountByName(name) {
   return null;
 }
 
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Profanity filter (basic)
+const badWords = ['spam', 'badword'];
+function filterMessage(text) {
+  let filtered = text;
+  badWords.forEach(word => {
+    const regex = new RegExp(word, 'gi');
+    filtered = filtered.replace(regex, '*'.repeat(word.length));
+  });
+  return filtered;
+}
+
+
+// ============ PERMISSIONS ============
+function hasPermission(serverId, userId, permission) {
+  const srv = servers.get(serverId);
+  if (!srv) return false;
+  if (srv.ownerId === userId) return true;
+  
+  const roleId = srv.memberRoles[userId] || 'default';
+  const role = srv.roles.find(r => r.id === roleId);
+  if (!role) return false;
+  
+  return role.permissions.includes('all') || role.permissions.includes(permission);
+}
+
+function canManageChannel(serverId, userId) {
+  return hasPermission(serverId, userId, 'manage_channels');
+}
+
+function canKick(serverId, userId) {
+  return hasPermission(serverId, userId, 'kick');
+}
+
+function canBan(serverId, userId) {
+  return hasPermission(serverId, userId, 'ban');
+}
+
+function canManageMessages(serverId, userId) {
+  return hasPermission(serverId, userId, 'manage_messages');
+}
+
+function canManageRoles(serverId, userId) {
+  return hasPermission(serverId, userId, 'manage_roles');
+}
+
 // ============ HTTP SERVER ============
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -126,6 +191,21 @@ const MIME = {
 
 const httpServer = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+  
+  // API endpoints
+  if (req.url.startsWith('/api/')) {
+    handleAPI(req, res);
+    return;
+  }
+  
   let filePath = req.url === '/' ? '/index.html' : req.url;
   filePath = path.join(__dirname, 'src', filePath);
   const ext = path.extname(filePath);
@@ -140,6 +220,31 @@ const httpServer = http.createServer((req, res) => {
     res.end(data);
   });
 });
+
+// ============ API HANDLERS ============
+function handleAPI(req, res) {
+  res.setHeader('Content-Type', 'application/json');
+  
+  if (req.url === '/api/status') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: 'ok', users: onlineUsers.size, servers: servers.size }));
+    return;
+  }
+  
+  if (req.url === '/api/servers') {
+    const list = [];
+    servers.forEach((srv, id) => {
+      list.push({ id, name: srv.name, members: srv.members.size });
+    });
+    res.writeHead(200);
+    res.end(JSON.stringify(list));
+    return;
+  }
+  
+  res.writeHead(404);
+  res.end(JSON.stringify({ error: 'Not found' }));
+}
+
 
 // ============ WEBSOCKET ============
 const wss = new WebSocket.Server({ server: httpServer });
@@ -186,7 +291,8 @@ function getUserData(userId) {
     id: userId,
     name: acc.name,
     avatar: acc.avatar,
-    status: isOnline ? (acc.status || 'online') : 'offline'
+    status: isOnline ? (acc.status || 'online') : 'offline',
+    customStatus: acc.customStatus || null
   } : null;
 }
 
@@ -214,7 +320,8 @@ function getServersForUser(userId) {
         messages: srv.messages || {},
         members: [...srv.members],
         roles: srv.roles || [],
-        memberRoles: srv.memberRoles || {}
+        memberRoles: srv.memberRoles || {},
+        channelPermissions: srv.channelPermissions || {}
       };
     }
   });
@@ -231,7 +338,8 @@ function getServerMembers(serverId, requesterId) {
       id,
       name: acc.name,
       avatar: acc.avatar,
-      status: isOnline ? 'online' : 'offline',
+      status: isOnline ? (acc.status || 'online') : 'offline',
+      customStatus: acc.customStatus,
       role: srv.memberRoles[id] || 'default',
       isOwner: srv.ownerId === id
     } : null;
@@ -243,11 +351,12 @@ function getVoiceUsers(serverId, channelId) {
   voiceState.forEach((data, oderId) => {
     if (data.serverId === serverId && data.channelId === channelId) {
       const user = getUserData(oderId);
-      if (user) result.push({ oderId, oderId, ...user, muted: data.muted });
+      if (user) result.push({ oderId, oderId, ...user, muted: data.muted, video: data.video, screen: data.screen });
     }
   });
   return result;
 }
+
 
 // ============ MESSAGE HANDLERS ============
 const handlers = {
@@ -270,7 +379,9 @@ const handlers = {
       name: name || 'Пользователь',
       avatar: null,
       status: 'online',
-      createdAt: Date.now()
+      customStatus: null,
+      createdAt: Date.now(),
+      settings: { notifications: true, sounds: true, privacy: 'everyone' }
     };
     accounts.set(email, account);
     saveAll();
@@ -306,7 +417,7 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, status: account.status || 'online' },
+      user: { name: account.name, avatar: account.avatar, status: account.status || 'online', customStatus: account.customStatus },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -315,31 +426,84 @@ const handlers = {
     broadcast({ type: 'user_join', user: getUserData(userId) }, userId);
   },
 
+  guest_login(ws) {
+    const guestNum = Math.floor(Math.random() * 10000);
+    const userId = genId('guest');
+    const name = 'Гость' + guestNum;
+    
+    ws.userId = userId;
+    ws.isGuest = true;
+    onlineUsers.set(userId, { name, avatar: null, status: 'online' });
+    
+    send(ws, {
+      type: 'auth_success',
+      userId,
+      user: { name, avatar: null, status: 'online' },
+      servers: {},
+      friends: [],
+      pendingRequests: [],
+      isGuest: true
+    });
+  },
+
   message(ws, data) {
-    const { serverId, channel, text, replyTo } = data;
+    const { serverId, channel, text, replyTo, attachments } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !srv.members.has(userId)) return;
     
+    // Check channel permissions
+    const chPerms = srv.channelPermissions?.[channel];
+    if (chPerms && !chPerms.send.includes(srv.memberRoles[userId] || 'default') && srv.ownerId !== userId) {
+      send(ws, { type: 'error', message: 'Нет прав для отправки сообщений' });
+      return;
+    }
+    
     const user = onlineUsers.get(userId);
     const acc = getAccountById(userId);
+    const filteredText = filterMessage(text);
+    
     const msg = {
-      id: Date.now(),
+      id: Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6),
       oderId: userId,
       author: acc?.name || user?.name || 'User',
       avatar: acc?.avatar || user?.avatar,
-      text,
+      text: filteredText,
       replyTo: replyTo || null,
-      time: Date.now()
+      attachments: attachments || [],
+      reactions: {},
+      time: Date.now(),
+      edited: false
     };
     
     if (!srv.messages) srv.messages = {};
     if (!srv.messages[channel]) srv.messages[channel] = [];
     srv.messages[channel].push(msg);
-    if (srv.messages[channel].length > 100) srv.messages[channel].shift();
+    if (srv.messages[channel].length > 500) srv.messages[channel].shift();
     saveAll();
     
     broadcastToServer(serverId, { type: 'message', serverId, channel, message: msg });
+  },
+
+
+  edit_message(ws, data) {
+    const { serverId, channelId, messageId, text } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv) return;
+    
+    const msgs = srv.messages?.[channelId];
+    if (!msgs) return;
+    
+    const msg = msgs.find(m => m.id == messageId);
+    if (!msg || msg.oderId !== userId) return;
+    
+    msg.text = filterMessage(text);
+    msg.edited = true;
+    msg.editedAt = Date.now();
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'message_edited', serverId, channelId, messageId, text: msg.text, editedAt: msg.editedAt });
   },
 
   delete_message(ws, data) {
@@ -355,7 +519,7 @@ const handlers = {
     if (idx === -1) return;
     
     const msg = msgs[idx];
-    if (msg.oderId !== userId && srv.ownerId !== userId) return;
+    if (msg.oderId !== userId && srv.ownerId !== userId && !canManageMessages(serverId, userId)) return;
     
     msgs.splice(idx, 1);
     msgs.forEach(m => {
@@ -368,33 +532,81 @@ const handlers = {
     broadcastToServer(serverId, { type: 'message_deleted', serverId, channelId, messageId });
   },
 
-  dm(ws, data) {
-    const { to, text } = data;
+  add_reaction(ws, data) {
+    const { serverId, channelId, messageId, emoji } = data;
     const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv) return;
+    
+    const msgs = srv.messages?.[channelId];
+    if (!msgs) return;
+    
+    const msg = msgs.find(m => m.id == messageId);
+    if (!msg) return;
+    
+    if (!msg.reactions) msg.reactions = {};
+    if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+    
+    if (!msg.reactions[emoji].includes(userId)) {
+      msg.reactions[emoji].push(userId);
+      saveAll();
+      broadcastToServer(serverId, { type: 'reaction_added', serverId, channelId, messageId, emoji, userId });
+    }
+  },
+
+  remove_reaction(ws, data) {
+    const { serverId, channelId, messageId, emoji } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv) return;
+    
+    const msgs = srv.messages?.[channelId];
+    if (!msgs) return;
+    
+    const msg = msgs.find(m => m.id == messageId);
+    if (!msg || !msg.reactions?.[emoji]) return;
+    
+    const idx = msg.reactions[emoji].indexOf(userId);
+    if (idx !== -1) {
+      msg.reactions[emoji].splice(idx, 1);
+      if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
+      saveAll();
+      broadcastToServer(serverId, { type: 'reaction_removed', serverId, channelId, messageId, emoji, userId });
+    }
+  },
+
+  dm(ws, data) {
+    const { to, text, attachments } = data;
+    const userId = ws.userId;
+    
+    // Check if blocked
+    const blocked = blockedUsers.get(to);
+    if (blocked && blocked.has(userId)) {
+      send(ws, { type: 'dm_error', message: 'Пользователь заблокировал вас' });
+      return;
+    }
+    
     const user = getUserData(userId);
     const recipient = getUserData(to);
     
     const msg = {
-      id: Date.now(),
+      id: Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6),
       from: userId,
       to,
       author: user?.name || 'User',
       avatar: user?.avatar,
-      text,
+      text: filterMessage(text),
+      attachments: attachments || [],
       time: Date.now()
     };
     
-    // Save to history
     const key = getDMKey(userId, to);
     if (!dmHistory.has(key)) dmHistory.set(key, []);
     dmHistory.get(key).push(msg);
-    if (dmHistory.get(key).length > 200) dmHistory.get(key).shift();
+    if (dmHistory.get(key).length > 500) dmHistory.get(key).shift();
     saveAll();
     
-    // Send to recipient
     sendToUser(to, { type: 'dm', message: msg, sender: user });
-    
-    // Confirm to sender
     send(ws, { type: 'dm_sent', to, message: msg, recipient });
   },
 
@@ -406,6 +618,7 @@ const handlers = {
     send(ws, { type: 'dm_history', oderId, messages: msgs });
   },
 
+
   create_server(ws, data) {
     const userId = ws.userId;
     const serverId = genId('server');
@@ -413,37 +626,43 @@ const handlers = {
       id: serverId,
       name: data.name || 'Новый сервер',
       icon: data.icon || null,
+      region: data.region || 'auto',
       ownerId: userId,
       channels: [{ id: 'general', name: 'общий' }],
       voiceChannels: [{ id: 'voice', name: 'Голосовой' }],
       messages: { general: [] },
       members: new Set([userId]),
       roles: [
-        { id: 'owner', name: 'Владелец', color: '#f1c40f', position: 100 },
-        { id: 'default', name: 'Участник', color: '#99aab5', position: 0 }
+        { id: 'owner', name: 'Владелец', color: '#f1c40f', position: 100, permissions: ['all'] },
+        { id: 'admin', name: 'Админ', color: '#e74c3c', position: 50, permissions: ['manage_channels', 'kick', 'ban', 'manage_messages', 'manage_roles'] },
+        { id: 'moderator', name: 'Модератор', color: '#3498db', position: 25, permissions: ['manage_messages', 'kick'] },
+        { id: 'default', name: 'Участник', color: '#99aab5', position: 0, permissions: ['send_messages', 'read_messages'] }
       ],
-      memberRoles: { [userId]: 'owner' }
+      memberRoles: { [userId]: 'owner' },
+      channelPermissions: {},
+      bans: new Set()
     };
     servers.set(serverId, srv);
     saveAll();
     
     send(ws, {
       type: 'server_created',
-      server: { ...srv, members: [...srv.members] }
+      server: { ...srv, members: [...srv.members], bans: [] }
     });
   },
 
   update_server(ws, data) {
-    const { serverId, name, icon } = data;
+    const { serverId, name, icon, region } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || srv.ownerId !== userId) return;
     
     if (name) srv.name = name;
     if (icon !== undefined) srv.icon = icon;
+    if (region) srv.region = region;
     saveAll();
     
-    broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon });
+    broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon, region: srv.region });
   },
 
   delete_server(ws, data) {
@@ -477,7 +696,7 @@ const handlers = {
     const { serverId, memberId } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
-    if (!srv || srv.ownerId !== userId || memberId === srv.ownerId) return;
+    if (!srv || !canKick(serverId, userId) || memberId === srv.ownerId) return;
     
     srv.members.delete(memberId);
     delete srv.memberRoles[memberId];
@@ -487,14 +706,43 @@ const handlers = {
     broadcastToServer(serverId, { type: 'member_left', serverId, oderId: memberId, kicked: true });
   },
 
-  create_channel(ws, data) {
-    const { serverId, name, isVoice } = data;
+  ban_member(ws, data) {
+    const { serverId, memberId, reason } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
-    if (!srv || srv.ownerId !== userId) return;
+    if (!srv || !canBan(serverId, userId) || memberId === srv.ownerId) return;
+    
+    srv.members.delete(memberId);
+    delete srv.memberRoles[memberId];
+    if (!srv.bans) srv.bans = new Set();
+    srv.bans.add(memberId);
+    saveAll();
+    
+    sendToUser(memberId, { type: 'server_left', serverId, banned: true, reason });
+    broadcastToServer(serverId, { type: 'member_banned', serverId, oderId: memberId });
+  },
+
+  unban_member(ws, data) {
+    const { serverId, memberId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canBan(serverId, userId)) return;
+    
+    if (srv.bans) srv.bans.delete(memberId);
+    saveAll();
+    
+    send(ws, { type: 'member_unbanned', serverId, memberId });
+  },
+
+
+  create_channel(ws, data) {
+    const { serverId, name, isVoice, isTemporary } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageChannel(serverId, userId)) return;
     
     const channelId = genId('ch');
-    const channel = { id: channelId, name: name || 'новый-канал' };
+    const channel = { id: channelId, name: name || 'новый-канал', isTemporary: isTemporary || false };
     
     if (isVoice) {
       srv.voiceChannels.push(channel);
@@ -511,7 +759,7 @@ const handlers = {
     const { serverId, channelId, name, isVoice } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
-    if (!srv || srv.ownerId !== userId) return;
+    if (!srv || !canManageChannel(serverId, userId)) return;
     
     const channels = isVoice ? srv.voiceChannels : srv.channels;
     const ch = channels.find(c => c.id === channelId);
@@ -526,7 +774,7 @@ const handlers = {
     const { serverId, channelId, isVoice } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
-    if (!srv || srv.ownerId !== userId) return;
+    if (!srv || !canManageChannel(serverId, userId)) return;
     
     if (isVoice) {
       srv.voiceChannels = srv.voiceChannels.filter(c => c.id !== channelId);
@@ -539,6 +787,19 @@ const handlers = {
     broadcastToServer(serverId, { type: 'channel_deleted', serverId, channelId, isVoice });
   },
 
+  set_channel_permissions(ws, data) {
+    const { serverId, channelId, permissions } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageChannel(serverId, userId)) return;
+    
+    if (!srv.channelPermissions) srv.channelPermissions = {};
+    srv.channelPermissions[channelId] = permissions;
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'channel_permissions_updated', serverId, channelId, permissions });
+  },
+
   create_invite(ws, data) {
     const { serverId } = data;
     const userId = ws.userId;
@@ -546,22 +807,27 @@ const handlers = {
     if (!srv || !srv.members.has(userId)) return;
     
     const code = genInvite();
-    invites.set(code, serverId);
+    invites.set(code, { serverId, createdBy: userId, createdAt: Date.now() });
     send(ws, { type: 'invite_created', code, serverId });
   },
 
   use_invite(ws, data) {
     const { code } = data;
     const userId = ws.userId;
-    const serverId = invites.get(code);
+    const invite = invites.get(code);
     
-    if (!serverId) {
+    if (!invite) {
       send(ws, { type: 'invite_error', message: 'Недействительный код' });
       return;
     }
     
-    const srv = servers.get(serverId);
+    const srv = servers.get(invite.serverId);
     if (!srv) return;
+    
+    if (srv.bans && srv.bans.has(userId)) {
+      send(ws, { type: 'invite_error', message: 'Вы забанены на этом сервере' });
+      return;
+    }
     
     srv.members.add(userId);
     srv.memberRoles[userId] = 'default';
@@ -569,17 +835,90 @@ const handlers = {
     
     send(ws, {
       type: 'server_joined',
-      serverId,
-      server: { ...srv, members: [...srv.members] }
+      serverId: invite.serverId,
+      server: { ...srv, members: [...srv.members], bans: [] }
     });
     
-    broadcastToServer(serverId, {
+    broadcastToServer(invite.serverId, {
       type: 'member_joined',
-      serverId,
+      serverId: invite.serverId,
       user: getUserData(userId)
     }, userId);
   },
 
+  // Roles management
+  create_role(ws, data) {
+    const { serverId, name, color, permissions } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageRoles(serverId, userId)) return;
+    
+    const roleId = genId('role');
+    const maxPos = Math.max(...srv.roles.map(r => r.position));
+    const role = {
+      id: roleId,
+      name: name || 'Новая роль',
+      color: color || '#99aab5',
+      position: maxPos - 1,
+      permissions: permissions || ['send_messages', 'read_messages']
+    };
+    srv.roles.push(role);
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'role_created', serverId, role });
+  },
+
+  update_role(ws, data) {
+    const { serverId, roleId, name, color, permissions } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageRoles(serverId, userId)) return;
+    
+    const role = srv.roles.find(r => r.id === roleId);
+    if (!role || role.id === 'owner') return;
+    
+    if (name) role.name = name;
+    if (color) role.color = color;
+    if (permissions) role.permissions = permissions;
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'role_updated', serverId, role });
+  },
+
+  delete_role(ws, data) {
+    const { serverId, roleId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageRoles(serverId, userId)) return;
+    if (roleId === 'owner' || roleId === 'default') return;
+    
+    srv.roles = srv.roles.filter(r => r.id !== roleId);
+    Object.keys(srv.memberRoles).forEach(mid => {
+      if (srv.memberRoles[mid] === roleId) srv.memberRoles[mid] = 'default';
+    });
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'role_deleted', serverId, roleId });
+  },
+
+  assign_role(ws, data) {
+    const { serverId, memberId, roleId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageRoles(serverId, userId)) return;
+    if (memberId === srv.ownerId) return;
+    
+    const role = srv.roles.find(r => r.id === roleId);
+    if (!role) return;
+    
+    srv.memberRoles[memberId] = roleId;
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'role_assigned', serverId, memberId, roleId });
+  },
+
+
+  // Friends
   friend_request(ws, data) {
     const { name } = data;
     const userId = ws.userId;
@@ -591,6 +930,20 @@ const handlers = {
     }
     if (target.id === userId) {
       send(ws, { type: 'friend_error', message: 'Нельзя добавить себя' });
+      return;
+    }
+    
+    // Check privacy settings
+    const targetAcc = getAccountById(target.id);
+    if (targetAcc?.settings?.privacy === 'friends_only') {
+      send(ws, { type: 'friend_error', message: 'Пользователь не принимает заявки' });
+      return;
+    }
+    
+    // Check if blocked
+    const blocked = blockedUsers.get(target.id);
+    if (blocked && blocked.has(userId)) {
+      send(ws, { type: 'friend_error', message: 'Пользователь заблокировал вас' });
       return;
     }
     
@@ -653,6 +1006,34 @@ const handlers = {
     sendToUser(oderId, { type: 'friend_removed', oderId: userId });
   },
 
+  block_user(ws, data) {
+    const { oderId } = data;
+    const userId = ws.userId;
+    
+    if (!blockedUsers.has(userId)) blockedUsers.set(userId, new Set());
+    blockedUsers.get(userId).add(oderId);
+    
+    // Remove from friends
+    const myFriends = friends.get(userId);
+    const theirFriends = friends.get(oderId);
+    if (myFriends) myFriends.delete(oderId);
+    if (theirFriends) theirFriends.delete(userId);
+    saveAll();
+    
+    send(ws, { type: 'user_blocked', oderId });
+  },
+
+  unblock_user(ws, data) {
+    const { oderId } = data;
+    const userId = ws.userId;
+    
+    const blocked = blockedUsers.get(userId);
+    if (blocked) blocked.delete(oderId);
+    saveAll();
+    
+    send(ws, { type: 'user_unblocked', oderId });
+  },
+
   get_friends(ws) {
     const userId = ws.userId;
     send(ws, {
@@ -673,7 +1054,7 @@ const handlers = {
   },
 
   update_profile(ws, data) {
-    const { name, avatar, status } = data;
+    const { name, avatar, status, customStatus } = data;
     const userId = ws.userId;
     const acc = getAccountById(userId);
     if (!acc) return;
@@ -681,6 +1062,7 @@ const handlers = {
     if (name) acc.name = name;
     if (avatar !== undefined) acc.avatar = avatar;
     if (status) acc.status = status;
+    if (customStatus !== undefined) acc.customStatus = customStatus;
     
     const online = onlineUsers.get(userId);
     if (online) {
@@ -689,7 +1071,6 @@ const handlers = {
       if (status) online.status = status;
     }
     
-    // Update messages
     servers.forEach(srv => {
       if (srv.members.has(userId)) {
         Object.values(srv.messages || {}).forEach(msgs => {
@@ -708,10 +1089,34 @@ const handlers = {
     broadcast({ type: 'user_update', user: getUserData(userId) }, userId);
   },
 
+  update_settings(ws, data) {
+    const { settings } = data;
+    const userId = ws.userId;
+    const acc = getAccountById(userId);
+    if (!acc) return;
+    
+    acc.settings = { ...acc.settings, ...settings };
+    saveAll();
+    
+    send(ws, { type: 'settings_updated', settings: acc.settings });
+  },
+
+
+  // Voice & Video
   voice_join(ws, data) {
     const { serverId, channelId } = data;
     const userId = ws.userId;
-    voiceState.set(userId, { serverId, channelId, muted: false });
+    voiceState.set(userId, { serverId, channelId, muted: false, video: false, screen: false });
+    
+    // Check if temporary channel and create if needed
+    const srv = servers.get(serverId);
+    if (srv) {
+      const ch = srv.voiceChannels.find(c => c.id === channelId);
+      if (ch?.isTemporary) {
+        // Temporary channel logic
+      }
+    }
+    
     broadcastToServer(serverId, {
       type: 'voice_state_update',
       serverId,
@@ -725,6 +1130,20 @@ const handlers = {
     const state = voiceState.get(userId);
     if (state) {
       voiceState.delete(userId);
+      
+      // Check if temporary channel should be deleted
+      const srv = servers.get(state.serverId);
+      if (srv) {
+        const ch = srv.voiceChannels.find(c => c.id === state.channelId);
+        if (ch?.isTemporary) {
+          const usersInChannel = getVoiceUsers(state.serverId, state.channelId);
+          if (usersInChannel.length === 0) {
+            srv.voiceChannels = srv.voiceChannels.filter(c => c.id !== state.channelId);
+            broadcastToServer(state.serverId, { type: 'channel_deleted', serverId: state.serverId, channelId: state.channelId, isVoice: true });
+          }
+        }
+      }
+      
       broadcastToServer(state.serverId, {
         type: 'voice_state_update',
         serverId: state.serverId,
@@ -748,14 +1167,126 @@ const handlers = {
     }
   },
 
+  voice_video(ws, data) {
+    const userId = ws.userId;
+    const state = voiceState.get(userId);
+    if (state) {
+      state.video = data.video;
+      broadcastToServer(state.serverId, {
+        type: 'voice_state_update',
+        serverId: state.serverId,
+        channelId: state.channelId,
+        users: getVoiceUsers(state.serverId, state.channelId)
+      });
+    }
+  },
+
+  voice_screen(ws, data) {
+    const userId = ws.userId;
+    const state = voiceState.get(userId);
+    if (state) {
+      state.screen = data.screen;
+      broadcastToServer(state.serverId, {
+        type: 'voice_screen_update',
+        serverId: state.serverId,
+        channelId: state.channelId,
+        userId,
+        screen: data.screen
+      });
+    }
+  },
+
   voice_signal(ws, data) {
     sendToUser(data.to, { type: 'voice_signal', from: ws.userId, signal: data.signal });
+  },
+
+  // Search
+  search_messages(ws, data) {
+    const { serverId, query, channelId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !srv.members.has(userId)) return;
+    
+    const results = [];
+    const searchIn = channelId ? { [channelId]: srv.messages[channelId] } : srv.messages;
+    
+    Object.entries(searchIn).forEach(([chId, msgs]) => {
+      if (!msgs) return;
+      msgs.forEach(msg => {
+        if (msg.text && msg.text.toLowerCase().includes(query.toLowerCase())) {
+          results.push({ ...msg, channelId: chId });
+        }
+      });
+    });
+    
+    send(ws, { type: 'search_results', serverId, results: results.slice(-50) });
+  },
+
+  search_users(ws, data) {
+    const { query } = data;
+    const results = [];
+    
+    accounts.forEach(acc => {
+      if (acc.name.toLowerCase().includes(query.toLowerCase())) {
+        results.push({ id: acc.id, name: acc.name, avatar: acc.avatar });
+      }
+    });
+    
+    send(ws, { type: 'user_search_results', results: results.slice(0, 20) });
+  },
+
+  // Forward message
+  forward_message(ws, data) {
+    const { messageId, targetType, targetId, originalServerId, originalChannelId } = data;
+    const userId = ws.userId;
+    
+    // Get original message
+    let originalMsg = null;
+    if (originalServerId) {
+      const srv = servers.get(originalServerId);
+      if (srv && srv.messages[originalChannelId]) {
+        originalMsg = srv.messages[originalChannelId].find(m => m.id == messageId);
+      }
+    }
+    
+    if (!originalMsg) return;
+    
+    const forwardedMsg = {
+      id: Date.now().toString() + '_' + Math.random().toString(36).slice(2, 6),
+      oderId: userId,
+      author: onlineUsers.get(userId)?.name || 'User',
+      avatar: onlineUsers.get(userId)?.avatar,
+      text: originalMsg.text,
+      forwarded: { from: originalMsg.author, originalId: messageId },
+      time: Date.now()
+    };
+    
+    if (targetType === 'channel') {
+      const [srvId, chId] = targetId.split(':');
+      const srv = servers.get(srvId);
+      if (srv && srv.members.has(userId)) {
+        if (!srv.messages[chId]) srv.messages[chId] = [];
+        srv.messages[chId].push(forwardedMsg);
+        saveAll();
+        broadcastToServer(srvId, { type: 'message', serverId: srvId, channel: chId, message: forwardedMsg });
+      }
+    } else if (targetType === 'dm') {
+      const key = getDMKey(userId, targetId);
+      if (!dmHistory.has(key)) dmHistory.set(key, []);
+      const dmMsg = { ...forwardedMsg, from: userId, to: targetId };
+      dmHistory.get(key).push(dmMsg);
+      saveAll();
+      sendToUser(targetId, { type: 'dm', message: dmMsg, sender: getUserData(userId) });
+      send(ws, { type: 'dm_sent', to: targetId, message: dmMsg });
+    }
   }
 };
+
 
 // ============ CONNECTION ============
 wss.on('connection', (ws) => {
   ws.userId = null;
+  ws.isGuest = false;
   
   ws.on('message', (raw) => {
     try {
@@ -772,6 +1303,20 @@ wss.on('connection', (ws) => {
       const state = voiceState.get(ws.userId);
       if (state) {
         voiceState.delete(ws.userId);
+        
+        // Check temporary channel
+        const srv = servers.get(state.serverId);
+        if (srv) {
+          const ch = srv.voiceChannels.find(c => c.id === state.channelId);
+          if (ch?.isTemporary) {
+            const usersInChannel = getVoiceUsers(state.serverId, state.channelId);
+            if (usersInChannel.length === 0) {
+              srv.voiceChannels = srv.voiceChannels.filter(c => c.id !== state.channelId);
+              broadcastToServer(state.serverId, { type: 'channel_deleted', serverId: state.serverId, channelId: state.channelId, isVoice: true });
+            }
+          }
+        }
+        
         broadcastToServer(state.serverId, {
           type: 'voice_state_update',
           serverId: state.serverId,

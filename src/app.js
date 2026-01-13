@@ -10,9 +10,13 @@ var state = {
   userId: null,
   username: null,
   userAvatar: null,
+  userStatus: 'online',
+  customStatus: null,
+  isGuest: false,
   servers: new Map(),
   friends: new Map(),
   pendingRequests: [],
+  blockedUsers: new Set(),
   currentServer: null,
   currentChannel: null,
   currentDM: null,
@@ -21,9 +25,15 @@ var state = {
   voiceChannel: null,
   localStream: null,
   replyingTo: null,
+  editingMessage: null,
   newServerIcon: null,
   editServerIcon: null,
-  editingServerId: null
+  editingServerId: null,
+  editingChannelId: null,
+  creatingVoice: false,
+  forwardingMessage: null,
+  searchResults: [],
+  settings: { notifications: true, sounds: true, privacy: 'everyone' }
 };
 
 // ============ UTILS ============
@@ -31,6 +41,7 @@ function qS(s) { return document.querySelector(s); }
 function qSA(s) { return document.querySelectorAll(s); }
 
 function escapeHtml(t) {
+  if (!t) return '';
   var d = document.createElement('div');
   d.textContent = t;
   return d.innerHTML;
@@ -44,6 +55,17 @@ function displayStatus(s) {
 function formatTime(ts) {
   var d = new Date(ts);
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+
+function formatDate(ts) {
+  var d = new Date(ts);
+  var today = new Date();
+  if (d.toDateString() === today.toDateString()) return 'Сегодня';
+  var yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('ru-RU');
 }
 
 // ============ WEBSOCKET ============
@@ -119,23 +141,27 @@ function tryAutoLogin() {
   }
 }
 
+
 // ============ MESSAGE HANDLER ============
 function handleMessage(msg) {
   var handlers = {
+    pong: function() {},
+    
     auth_success: function() {
       state.userId = msg.userId;
       state.username = msg.user.name;
       state.userAvatar = msg.user.avatar;
+      state.userStatus = msg.user.status || 'online';
+      state.customStatus = msg.user.customStatus;
+      state.isGuest = msg.isGuest || false;
       localStorage.setItem('session', JSON.stringify({ userId: msg.userId }));
       
-      // Load servers
       if (msg.servers) {
         Object.values(msg.servers).forEach(function(srv) {
           state.servers.set(srv.id, srv);
         });
       }
       
-      // Load friends
       if (msg.friends) {
         msg.friends.forEach(function(f) {
           state.friends.set(f.id, f);
@@ -143,7 +169,6 @@ function handleMessage(msg) {
         });
       }
       
-      // Load pending requests
       if (msg.pendingRequests) {
         state.pendingRequests = msg.pendingRequests;
       }
@@ -188,6 +213,7 @@ function handleMessage(msg) {
       if (srv) {
         if (msg.name) srv.name = msg.name;
         if (msg.icon !== undefined) srv.icon = msg.icon;
+        if (msg.region) srv.region = msg.region;
         renderServers();
         if (state.currentServer === msg.serverId) {
           qS('#server-name').textContent = srv.name;
@@ -217,6 +243,8 @@ function handleMessage(msg) {
         qS('#home-view').classList.add('active');
       }
       renderServers();
+      if (msg.kicked) showNotification('Вы были исключены с сервера');
+      if (msg.banned) showNotification('Вы были забанены на сервере');
     },
     
     channel_created: function() {
@@ -259,6 +287,7 @@ function handleMessage(msg) {
         if (state.currentServer === msg.serverId) renderChannels();
       }
     },
+
     
     message: function() {
       var srv = state.servers.get(msg.serverId);
@@ -267,6 +296,21 @@ function handleMessage(msg) {
         srv.messages[msg.channel].push(msg.message);
         if (state.currentServer === msg.serverId && state.currentChannel === msg.channel) {
           appendMessage(msg.message);
+        }
+      }
+    },
+    
+    message_edited: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m) {
+          m.text = msg.text;
+          m.edited = true;
+          m.editedAt = msg.editedAt;
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
         }
       }
     },
@@ -288,6 +332,38 @@ function handleMessage(msg) {
       }
     },
     
+    reaction_added: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m) {
+          if (!m.reactions) m.reactions = {};
+          if (!m.reactions[msg.emoji]) m.reactions[msg.emoji] = [];
+          if (!m.reactions[msg.emoji].includes(msg.userId)) {
+            m.reactions[msg.emoji].push(msg.userId);
+          }
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
+    reaction_removed: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m && m.reactions && m.reactions[msg.emoji]) {
+          var idx = m.reactions[msg.emoji].indexOf(msg.userId);
+          if (idx !== -1) m.reactions[msg.emoji].splice(idx, 1);
+          if (m.reactions[msg.emoji].length === 0) delete m.reactions[msg.emoji];
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
     dm: function() {
       var senderId = msg.message.from;
       if (msg.sender) state.friends.set(senderId, msg.sender);
@@ -297,6 +373,9 @@ function handleMessage(msg) {
       renderDMList();
       if (state.currentDM === senderId) {
         appendDMMessage(msg.message);
+      }
+      if (state.settings.notifications) {
+        showNotification('Новое сообщение от ' + (msg.sender?.name || 'User'));
       }
     },
     
@@ -313,12 +392,17 @@ function handleMessage(msg) {
       }
     },
     
+    dm_error: function() {
+      showNotification(msg.message || 'Ошибка отправки');
+    },
+    
     dm_history: function() {
       state.dmMessages.set(msg.oderId, msg.messages || []);
       if (state.currentDM === msg.oderId) {
         renderDMMessages();
       }
     },
+
     
     friend_request_sent: function() {
       showNotification('Заявка в друзья отправлена');
@@ -359,6 +443,18 @@ function handleMessage(msg) {
       renderDMList();
     },
     
+    user_blocked: function() {
+      state.blockedUsers.add(msg.oderId);
+      state.friends.delete(msg.oderId);
+      renderFriends();
+      showNotification('Пользователь заблокирован');
+    },
+    
+    user_unblocked: function() {
+      state.blockedUsers.delete(msg.oderId);
+      showNotification('Пользователь разблокирован');
+    },
+    
     invite_created: function() {
       qS('#invite-code-display').value = msg.code;
       openModal('invite-modal');
@@ -371,7 +467,13 @@ function handleMessage(msg) {
     profile_updated: function() {
       state.username = msg.user.name;
       state.userAvatar = msg.user.avatar;
+      state.userStatus = msg.user.status;
+      state.customStatus = msg.user.customStatus;
       updateUserPanel();
+    },
+    
+    settings_updated: function() {
+      state.settings = msg.settings;
     },
     
     user_join: function() {
@@ -431,13 +533,68 @@ function handleMessage(msg) {
       }
     },
     
+    member_banned: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.members = srv.members.filter(function(m) { return m !== msg.oderId; });
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
+    role_created: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.roles.push(msg.role);
+      }
+    },
+    
+    role_updated: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        var idx = srv.roles.findIndex(function(r) { return r.id === msg.role.id; });
+        if (idx !== -1) srv.roles[idx] = msg.role;
+      }
+    },
+    
+    role_deleted: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.roles = srv.roles.filter(function(r) { return r.id !== msg.roleId; });
+      }
+    },
+    
+    role_assigned: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.memberRoles[msg.memberId] = msg.roleId;
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
     voice_state_update: function() {
       // Update voice users display
+      if (state.currentServer === msg.serverId) {
+        renderVoiceUsers(msg.channelId, msg.users);
+      }
+    },
+    
+    search_results: function() {
+      state.searchResults = msg.results;
+      renderSearchResults();
+    },
+    
+    user_search_results: function() {
+      renderUserSearchResults(msg.results);
     }
   };
   
   if (handlers[msg.type]) handlers[msg.type]();
 }
+
 
 // ============ UI HELPERS ============
 function showView(id) {
@@ -475,6 +632,7 @@ function showNotification(text) {
 function updateUserPanel() {
   var av = qS('#user-avatar');
   var nm = qS('#user-name');
+  var st = qS('#user-status');
   if (av) {
     if (state.userAvatar) {
       av.innerHTML = '<img src="' + state.userAvatar + '">';
@@ -484,6 +642,7 @@ function updateUserPanel() {
     }
   }
   if (nm) nm.textContent = state.username || 'Гость';
+  if (st) st.textContent = state.customStatus || displayStatus(state.userStatus);
 }
 
 // ============ RENDER FUNCTIONS ============
@@ -535,11 +694,12 @@ function renderChannels() {
   (srv.voiceChannels || []).forEach(function(vc) {
     vh += '<div class="voice-item' + (state.voiceChannel === vc.id ? ' connected' : '') + '" data-id="' + vc.id + '">';
     vh += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>';
-    vh += '<span>' + escapeHtml(vc.name) + '</span></div>';
+    vh += '<span>' + escapeHtml(vc.name) + '</span>';
+    if (vc.isTemporary) vh += '<span class="temp-badge">temp</span>';
+    vh += '</div>';
   });
   vl.innerHTML = vh;
   
-  // Bind events
   tl.querySelectorAll('.channel-item').forEach(function(el) {
     el.onclick = function() { openChannel(el.dataset.id); };
     el.oncontextmenu = function(e) {
@@ -557,6 +717,7 @@ function renderChannels() {
   });
 }
 
+
 function renderMembers() {
   var srv = state.servers.get(state.currentServer);
   var ol = qS('#members-online');
@@ -572,13 +733,22 @@ function renderMembers() {
   
   ol.innerHTML = on.map(memberHTML).join('');
   ofl.innerHTML = off.map(memberHTML).join('');
+  
+  // Bind member context menu
+  qSA('.member-item').forEach(function(el) {
+    el.oncontextmenu = function(e) {
+      e.preventDefault();
+      showMemberContext(e.clientX, e.clientY, el.dataset.id);
+    };
+  });
 }
 
 function memberHTML(m) {
   var crown = m.isOwner ? '<svg class="crown-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>' : '';
+  var role = m.role && m.role !== 'default' ? '<span class="role-badge">' + escapeHtml(m.role) + '</span>' : '';
   return '<div class="member-item" data-id="' + m.id + '">' +
     '<div class="avatar ' + (m.status || 'offline') + '">' + (m.avatar ? '<img src="' + m.avatar + '">' : (m.name ? m.name.charAt(0).toUpperCase() : '?')) + '</div>' +
-    '<span>' + escapeHtml(m.name || 'User') + crown + '</span></div>';
+    '<span>' + escapeHtml(m.name || 'User') + crown + role + '</span></div>';
 }
 
 function renderFriends() {
@@ -626,7 +796,7 @@ function renderFriends() {
 function userItemHTML(u) {
   return '<div class="user-item" data-id="' + u.id + '">' +
     '<div class="avatar ' + (u.status || 'offline') + '">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
-    '<div class="info"><div class="name">' + escapeHtml(u.name || 'User') + '</div><div class="status">' + displayStatus(u.status) + '</div></div>' +
+    '<div class="info"><div class="name">' + escapeHtml(u.name || 'User') + '</div><div class="status">' + (u.customStatus || displayStatus(u.status)) + '</div></div>' +
     '<div class="actions"><button class="msg-btn" data-id="' + u.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div></div>';
 }
 
@@ -667,12 +837,56 @@ function renderDMList() {
   });
 }
 
+function renderVoiceUsers(channelId, users) {
+  var vu = qS('#voice-users');
+  if (!vu || state.voiceChannel !== channelId) return;
+  
+  vu.innerHTML = (users || []).map(function(u) {
+    return '<div class="voice-user' + (u.muted ? ' muted' : '') + '">' +
+      '<div class="avatar">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+      '<span>' + escapeHtml(u.name) + '</span>' +
+      (u.muted ? '<svg class="muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>' : '') +
+      (u.video ? '<svg class="video-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>' : '') +
+      (u.screen ? '<svg class="screen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function renderSearchResults() {
+  // Implement search results rendering
+}
+
+
+function renderUserSearchResults(results) {
+  var sr = qS('#search-results');
+  if (!sr) return;
+  
+  if (!results || results.length === 0) {
+    sr.innerHTML = '<div class="empty">Пользователь не найден</div>';
+    return;
+  }
+  
+  sr.innerHTML = results.map(function(u) {
+    return '<div class="user-item search-result" data-id="' + u.id + '">' +
+      '<div class="avatar">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+      '<div class="info"><div class="name">' + escapeHtml(u.name) + '</div></div>' +
+      '<div class="actions"><button class="add-friend-btn" data-name="' + escapeHtml(u.name) + '">Добавить</button></div></div>';
+  }).join('');
+  
+  sr.querySelectorAll('.add-friend-btn').forEach(function(b) {
+    b.onclick = function() {
+      send({ type: 'friend_request', name: b.dataset.name });
+    };
+  });
+}
+
 // ============ MESSAGES ============
 function messageHTML(m) {
   var t = formatTime(m.time || Date.now());
   var a = m.author || 'User';
   var txt = m.text || '';
   var pendingClass = m.pending ? ' pending' : '';
+  var editedMark = m.edited ? '<span class="edited">(ред.)</span>' : '';
   
   var replyHtml = '';
   if (m.replyTo) {
@@ -688,13 +902,45 @@ function messageHTML(m) {
     }
   }
   
+  var forwardedHtml = '';
+  if (m.forwarded) {
+    forwardedHtml = '<div class="forwarded-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>Переслано от ' + escapeHtml(m.forwarded.from) + '</div>';
+  }
+  
+  var reactionsHtml = '';
+  if (m.reactions && Object.keys(m.reactions).length > 0) {
+    reactionsHtml = '<div class="reactions">';
+    Object.entries(m.reactions).forEach(function(entry) {
+      var emoji = entry[0];
+      var users = entry[1];
+      var isMyReaction = users.includes(state.userId);
+      reactionsHtml += '<button class="reaction' + (isMyReaction ? ' my-reaction' : '') + '" data-emoji="' + emoji + '" data-msg-id="' + m.id + '">' + emoji + ' ' + users.length + '</button>';
+    });
+    reactionsHtml += '</div>';
+  }
+  
+  var attachmentsHtml = '';
+  if (m.attachments && m.attachments.length > 0) {
+    attachmentsHtml = '<div class="attachments">';
+    m.attachments.forEach(function(att) {
+      if (att.type === 'image') {
+        attachmentsHtml += '<img src="' + att.url + '" class="attachment-image">';
+      } else if (att.type === 'file') {
+        attachmentsHtml += '<a href="' + att.url + '" class="attachment-file" download>' + escapeHtml(att.name) + '</a>';
+      }
+    });
+    attachmentsHtml += '</div>';
+  }
+  
   return '<div class="message' + (m.replyTo ? ' has-reply' : '') + pendingClass + '" data-id="' + m.id + '" data-author-id="' + (m.oderId || '') + '" data-author="' + escapeHtml(a) + '" data-text="' + escapeHtml(txt) + '">' +
-    replyHtml +
+    replyHtml + forwardedHtml +
     '<div class="message-body">' +
     '<div class="avatar">' + (m.avatar ? '<img src="' + m.avatar + '">' : a.charAt(0).toUpperCase()) + '</div>' +
     '<div class="content">' +
-    '<div class="header"><span class="author">' + escapeHtml(a) + '</span><span class="time">' + t + '</span></div>' +
+    '<div class="header"><span class="author">' + escapeHtml(a) + '</span><span class="time">' + t + '</span>' + editedMark + '</div>' +
     '<div class="text">' + escapeHtml(txt) + '</div>' +
+    attachmentsHtml +
+    reactionsHtml +
     '</div></div></div>';
 }
 
@@ -733,6 +979,7 @@ function removePendingMessages() {
   qSA('#dm-messages .message.pending').forEach(function(el) { el.remove(); });
 }
 
+
 function bindMessageEvents() {
   qSA('#messages .message').forEach(function(el) {
     el.oncontextmenu = function(e) {
@@ -752,6 +999,22 @@ function bindMessageEvents() {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
         target.classList.add('highlighted');
         setTimeout(function() { target.classList.remove('highlighted'); }, 2000);
+      }
+    };
+  });
+  
+  // Reaction buttons
+  qSA('#messages .reaction').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      var emoji = btn.dataset.emoji;
+      var msgId = btn.dataset.msgId;
+      var isMyReaction = btn.classList.contains('my-reaction');
+      
+      if (isMyReaction) {
+        send({ type: 'remove_reaction', serverId: state.currentServer, channelId: state.currentChannel, messageId: msgId, emoji: emoji });
+      } else {
+        send({ type: 'add_reaction', serverId: state.currentServer, channelId: state.currentChannel, messageId: msgId, emoji: emoji });
       }
     };
   });
@@ -830,7 +1093,6 @@ function openDM(uid) {
   showView('dm-view');
   renderDMList();
   
-  // Load history from server
   send({ type: 'get_dm_history', oderId: uid });
   renderDMMessages();
 }
@@ -858,6 +1120,7 @@ function leaveVoiceChannel() {
   renderChannels();
   showView('chat-view');
 }
+
 
 // ============ CONTEXT MENUS ============
 function showServerContext(x, y, srv) {
@@ -891,6 +1154,22 @@ function showMessageContext(x, y, msgId, msgText, isOwn, msgAuthor) {
   ctx.dataset.isOwn = isOwn ? '1' : '0';
   var delBtn = ctx.querySelector('[data-action="delete-message"]');
   if (delBtn) delBtn.style.display = isOwn ? 'flex' : 'none';
+}
+
+function showMemberContext(x, y, memberId) {
+  // Member context menu for kick/ban/role assignment
+  var srv = state.servers.get(state.currentServer);
+  if (!srv) return;
+  
+  var isOwner = srv.ownerId === state.userId;
+  if (!isOwner && memberId !== state.userId) return;
+  
+  // Simple implementation - could be expanded
+  if (memberId !== state.userId && isOwner) {
+    if (confirm('Исключить пользователя с сервера?')) {
+      send({ type: 'kick_member', serverId: state.currentServer, memberId: memberId });
+    }
+  }
 }
 
 function showReplyBar() {
@@ -966,6 +1245,7 @@ function signOut() {
   closeModal('settings-modal');
 }
 
+
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
   // Auth
@@ -988,6 +1268,13 @@ document.addEventListener('DOMContentLoaded', function() {
     send({ type: 'register', email: email, password: pwd, name: name });
   };
   
+  var guestBtn = qS('#guest-btn');
+  if (guestBtn) {
+    guestBtn.onclick = function() {
+      send({ type: 'guest_login' });
+    };
+  }
+  
   qS('#show-register').onclick = function(e) {
     e.preventDefault();
     qS('#login-box').classList.add('hidden');
@@ -999,6 +1286,35 @@ document.addEventListener('DOMContentLoaded', function() {
     qS('#register-box').classList.add('hidden');
     qS('#login-box').classList.remove('hidden');
   };
+  
+  // Show/hide password
+  var showLoginPass = qS('#show-login-pass');
+  if (showLoginPass) {
+    showLoginPass.onclick = function() {
+      var inp = qS('#login-pass');
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        showLoginPass.textContent = 'Скрыть';
+      } else {
+        inp.type = 'password';
+        showLoginPass.textContent = 'Показать';
+      }
+    };
+  }
+  
+  var showRegPass = qS('#show-reg-pass');
+  if (showRegPass) {
+    showRegPass.onclick = function() {
+      var inp = qS('#reg-pass');
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        showRegPass.textContent = 'Скрыть';
+      } else {
+        inp.type = 'password';
+        showRegPass.textContent = 'Показать';
+      }
+    };
+  }
   
   // Home button
   qS('.home-btn').onclick = function() {
@@ -1054,7 +1370,6 @@ document.addEventListener('DOMContentLoaded', function() {
     var text = input.value.trim();
     if (!text || !state.currentDM) return;
     
-    // Optimistic update
     var tempMsg = {
       id: 'temp_' + Date.now(),
       from: state.userId,
@@ -1070,6 +1385,7 @@ document.addEventListener('DOMContentLoaded', function() {
     send({ type: 'dm', to: state.currentDM, text: text });
     input.value = '';
   }
+
   
   // Create server
   qS('#add-server-btn').onclick = function() { openModal('create-server-modal'); };
@@ -1134,10 +1450,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // Settings tabs
   qSA('.settings-tab').forEach(function(tab) {
     tab.onclick = function() {
-      qSA('.settings-tab').forEach(function(t) { t.classList.remove('active'); });
+      var settingsType = tab.dataset.settings;
+      if (!settingsType) return;
+      qSA('.settings-tab[data-settings]').forEach(function(t) { t.classList.remove('active'); });
       tab.classList.add('active');
-      qSA('.settings-panel').forEach(function(p) { p.classList.remove('active'); });
-      var panel = qS('#settings-' + tab.dataset.settings);
+      qSA('#settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#settings-' + settingsType);
       if (panel) panel.classList.add('active');
     };
   });
@@ -1180,18 +1498,76 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     };
   }
+
   
   // Channel context menu
   var channelCtx = qS('#channel-context');
   if (channelCtx) {
-    channelCtx.querySelector('[data-action="delete-channel"]').onclick = function() {
-      if (confirm('Удалить канал?')) {
+    var editChBtn = channelCtx.querySelector('[data-action="edit-channel"]');
+    if (editChBtn) {
+      editChBtn.onclick = function() {
+        state.editingChannelId = channelCtx.dataset.channelId;
+        var srv = state.servers.get(state.currentServer);
+        if (srv) {
+          var isVoice = channelCtx.dataset.isVoice === '1';
+          var channels = isVoice ? srv.voiceChannels : srv.channels;
+          var ch = channels.find(function(c) { return c.id === state.editingChannelId; });
+          if (ch) {
+            qS('#edit-channel-name').value = ch.name;
+            openModal('edit-channel-modal');
+          }
+        }
+      };
+    }
+    
+    var delChBtn = channelCtx.querySelector('[data-action="delete-channel"]');
+    if (delChBtn) {
+      delChBtn.onclick = function() {
+        var srv = state.servers.get(state.currentServer);
+        if (srv) {
+          var isVoice = channelCtx.dataset.isVoice === '1';
+          var channels = isVoice ? srv.voiceChannels : srv.channels;
+          var ch = channels.find(function(c) { return c.id === channelCtx.dataset.channelId; });
+          if (ch) {
+            qS('#delete-channel-name').textContent = ch.name;
+            state.editingChannelId = channelCtx.dataset.channelId;
+            openModal('confirm-delete-channel-modal');
+          }
+        }
+      };
+    }
+  }
+  
+  // Confirm delete channel
+  var confirmDelChBtn = qS('#confirm-delete-channel-btn');
+  if (confirmDelChBtn) {
+    confirmDelChBtn.onclick = function() {
+      var channelCtx = qS('#channel-context');
+      send({
+        type: 'delete_channel',
+        serverId: state.currentServer,
+        channelId: state.editingChannelId,
+        isVoice: channelCtx?.dataset.isVoice === '1'
+      });
+      closeModal('confirm-delete-channel-modal');
+    };
+  }
+  
+  // Save channel settings
+  var saveChBtn = qS('#save-channel-settings');
+  if (saveChBtn) {
+    saveChBtn.onclick = function() {
+      var name = qS('#edit-channel-name').value.trim();
+      if (name && state.editingChannelId) {
+        var channelCtx = qS('#channel-context');
         send({
-          type: 'delete_channel',
+          type: 'update_channel',
           serverId: state.currentServer,
-          channelId: channelCtx.dataset.channelId,
-          isVoice: channelCtx.dataset.isVoice === '1'
+          channelId: state.editingChannelId,
+          name: name,
+          isVoice: channelCtx?.dataset.isVoice === '1'
         });
+        closeModal('edit-channel-modal');
       }
     };
   }
@@ -1209,6 +1585,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     msgCtx.querySelector('[data-action="copy-text"]').onclick = function() {
       navigator.clipboard.writeText(msgCtx.dataset.msgText);
+      showNotification('Текст скопирован');
     };
     msgCtx.querySelector('[data-action="delete-message"]').onclick = function() {
       send({
@@ -1218,7 +1595,65 @@ document.addEventListener('DOMContentLoaded', function() {
         messageId: msgCtx.dataset.msgId
       });
     };
+    
+    var forwardBtn = msgCtx.querySelector('[data-action="forward"]');
+    if (forwardBtn) {
+      forwardBtn.onclick = function() {
+        state.forwardingMessage = {
+          id: msgCtx.dataset.msgId,
+          text: msgCtx.dataset.msgText,
+          author: msgCtx.dataset.msgAuthor
+        };
+        openForwardModal();
+      };
+    }
   }
+  
+  function openForwardModal() {
+    var list = qS('#forward-list');
+    var preview = qS('#forward-msg-preview');
+    if (!list || !state.forwardingMessage) return;
+    
+    if (preview) {
+      preview.textContent = state.forwardingMessage.text.substring(0, 100);
+    }
+    
+    var h = '';
+    // Add DM chats
+    state.friends.forEach(function(f) {
+      h += '<div class="forward-item" data-type="dm" data-id="' + f.id + '">' +
+        '<div class="avatar">' + (f.avatar ? '<img src="' + f.avatar + '">' : f.name.charAt(0).toUpperCase()) + '</div>' +
+        '<span>' + escapeHtml(f.name) + '</span></div>';
+    });
+    // Add server channels
+    state.servers.forEach(function(srv) {
+      srv.channels.forEach(function(ch) {
+        h += '<div class="forward-item" data-type="channel" data-id="' + srv.id + ':' + ch.id + '">' +
+          '<span class="channel-icon">#</span>' +
+          '<span>' + escapeHtml(srv.name) + ' / ' + escapeHtml(ch.name) + '</span></div>';
+      });
+    });
+    
+    list.innerHTML = h;
+    
+    list.querySelectorAll('.forward-item').forEach(function(item) {
+      item.onclick = function() {
+        send({
+          type: 'forward_message',
+          messageId: state.forwardingMessage.id,
+          targetType: item.dataset.type,
+          targetId: item.dataset.id,
+          originalServerId: state.currentServer,
+          originalChannelId: state.currentChannel
+        });
+        closeModal('forward-modal');
+        showNotification('Сообщение переслано');
+      };
+    });
+    
+    openModal('forward-modal');
+  }
+
   
   // Server settings
   qS('#save-server-settings').onclick = function() {
@@ -1258,6 +1693,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // Voice controls
   qS('#voice-leave').onclick = leaveVoiceChannel;
   
+  var voiceMicBtn = qS('#voice-mic');
+  if (voiceMicBtn) {
+    voiceMicBtn.onclick = function() {
+      voiceMicBtn.classList.toggle('muted');
+      send({ type: 'voice_mute', muted: voiceMicBtn.classList.contains('muted') });
+    };
+  }
+  
   // Server settings tabs
   qSA('[data-server-settings]').forEach(function(tab) {
     tab.onclick = function() {
@@ -1268,6 +1711,33 @@ document.addEventListener('DOMContentLoaded', function() {
       if (panel) panel.classList.add('active');
     };
   });
+  
+  // Channel settings tabs
+  qSA('[data-channel-settings]').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('[data-channel-settings]').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('#edit-channel-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#channel-settings-' + tab.dataset.channelSettings);
+      if (panel) panel.classList.add('active');
+    };
+  });
+  
+  // Delete channel from settings
+  var delChFromSettings = qS('#delete-channel-from-settings');
+  if (delChFromSettings) {
+    delChFromSettings.onclick = function() {
+      var srv = state.servers.get(state.currentServer);
+      if (srv && state.editingChannelId) {
+        var ch = srv.channels.find(function(c) { return c.id === state.editingChannelId; }) ||
+                 srv.voiceChannels.find(function(c) { return c.id === state.editingChannelId; });
+        if (ch) {
+          qS('#delete-channel-name').textContent = ch.name;
+          openModal('confirm-delete-channel-modal');
+        }
+      }
+    };
+  }
   
   // Avatar upload
   qS('#upload-avatar').onclick = function() { qS('#avatar-input').click(); };
@@ -1312,6 +1782,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     reader.readAsDataURL(file);
   };
+
   
   // Custom select dropdowns
   qSA('.custom-select-trigger').forEach(function(trigger) {
@@ -1333,6 +1804,128 @@ document.addEventListener('DOMContentLoaded', function() {
         wrapper.classList.remove('open');
       }
     };
+  });
+  
+  // File attachments
+  var attachBtn = qS('#attach-btn');
+  var fileInput = qS('#file-input');
+  if (attachBtn && fileInput) {
+    attachBtn.onclick = function() { fileInput.click(); };
+    fileInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var attachment = {
+          type: file.type.startsWith('image/') ? 'image' : 'file',
+          url: ev.target.result,
+          name: file.name
+        };
+        
+        var text = qS('#msg-input').value.trim() || '';
+        var data = {
+          type: 'message',
+          serverId: state.currentServer,
+          channel: state.currentChannel,
+          text: text,
+          attachments: [attachment]
+        };
+        send(data);
+        qS('#msg-input').value = '';
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  
+  // DM file attachments
+  var dmAttachBtn = qS('#dm-attach-btn');
+  var dmFileInput = qS('#dm-file-input');
+  if (dmAttachBtn && dmFileInput) {
+    dmAttachBtn.onclick = function() { dmFileInput.click(); };
+    dmFileInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var attachment = {
+          type: file.type.startsWith('image/') ? 'image' : 'file',
+          url: ev.target.result,
+          name: file.name
+        };
+        
+        var text = qS('#dm-input').value.trim() || '';
+        send({
+          type: 'dm',
+          to: state.currentDM,
+          text: text,
+          attachments: [attachment]
+        });
+        qS('#dm-input').value = '';
+        dmFileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  
+  // Mic test
+  var micTestBtn = qS('#mic-test-btn');
+  var micTestStream = null;
+  var micTestContext = null;
+  
+  if (micTestBtn) {
+    micTestBtn.onclick = function() {
+      if (micTestStream) {
+        micTestStream.getTracks().forEach(function(t) { t.stop(); });
+        micTestStream = null;
+        if (micTestContext) micTestContext.close();
+        micTestContext = null;
+        micTestBtn.querySelector('span').textContent = 'Проверить микрофон';
+        qS('#mic-level-bar').style.width = '0%';
+        return;
+      }
+      
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        micTestStream = stream;
+        micTestBtn.querySelector('span').textContent = 'Остановить';
+        
+        micTestContext = new AudioContext();
+        var analyser = micTestContext.createAnalyser();
+        var source = micTestContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        
+        var dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        function updateLevel() {
+          if (!micTestStream) return;
+          analyser.getByteFrequencyData(dataArray);
+          var avg = dataArray.reduce(function(a, b) { return a + b; }, 0) / dataArray.length;
+          qS('#mic-level-bar').style.width = Math.min(100, avg * 2) + '%';
+          requestAnimationFrame(updateLevel);
+        }
+        updateLevel();
+      }).catch(function(e) {
+        console.error('Mic test error:', e);
+        showNotification('Не удалось получить доступ к микрофону');
+      });
+    };
+  }
+  
+  // Emoji reactions (quick add)
+  document.addEventListener('dblclick', function(e) {
+    var msg = e.target.closest('.message');
+    if (msg && state.currentServer && state.currentChannel) {
+      send({
+        type: 'add_reaction',
+        serverId: state.currentServer,
+        channelId: state.currentChannel,
+        messageId: msg.dataset.id,
+        emoji: '👍'
+      });
+    }
   });
   
   // Connect
