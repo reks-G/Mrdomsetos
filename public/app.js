@@ -1532,12 +1532,28 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   
   // Join server
-  qS('#join-server-btn').onclick = function() { openModal('join-modal'); };
-  qS('#use-invite-btn').onclick = function() {
-    var code = qS('#invite-code').value.trim();
-    if (!code) return;
-    send({ type: 'use_invite', code: code });
-  };
+  var joinServerBtn = qS('#join-server-btn');
+  if (joinServerBtn) {
+    joinServerBtn.onclick = function() { openModal('join-modal'); };
+  }
+  var useInviteBtn = qS('#use-invite-btn');
+  if (useInviteBtn) {
+    useInviteBtn.onclick = function() {
+      var code = qS('#invite-code').value.trim();
+      if (!code) return;
+      send({ type: 'use_invite', code: code });
+    };
+  }
+  
+  var inviteCodeInput = qS('#invite-code');
+  if (inviteCodeInput) {
+    inviteCodeInput.onkeypress = function(e) {
+      if (e.key === 'Enter') {
+        var code = inviteCodeInput.value.trim();
+        if (code) send({ type: 'use_invite', code: code });
+      }
+    };
+  }
   
   // Create channel
   qS('#add-channel-btn').onclick = function() {
