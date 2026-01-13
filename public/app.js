@@ -1,1180 +1,1933 @@
-﻿// MrDomestos* - Discord Clone
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
+// ============ CONFIG ============
+var RENDER_URL = 'wss://discord-clone-ws.onrender.com';
+var WS_URL = (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '') 
+  ? RENDER_URL 
+  : 'wss://' + window.location.hostname;
 
-const WS_URL = location.hostname === 'localhost' ? 'ws://localhost:3001' : 'wss://discord-clone-ws.onrender.com';
-
-const state = {
+// ============ STATE ============
+var state = {
   ws: null,
   userId: null,
   username: null,
+  userAvatar: null,
+  userStatus: 'online',
+  customStatus: null,
+  isGuest: false,
   servers: new Map(),
   friends: new Map(),
   pendingRequests: [],
-  dms: new Map(),
+  blockedUsers: new Set(),
   currentServer: null,
   currentChannel: null,
   currentDM: null,
-  currentView: 'online',
-  contextServer: null,
-  contextMember: null,
-  profileUser: null,
-  creatingVoice: false,
-  editServerIcon: null,
-  editServerBanner: null,
+  dmMessages: new Map(),
+  dmChats: new Set(),
   voiceChannel: null,
-  voiceUsers: new Map(),
   localStream: null,
-  peerConnections: new Map(),
-  settings: {
-    theme: 'dark',
-    micDevice: null,
-    speakerDevice: null,
-    micVolume: 100,
-    speakerVolume: 100
-  }
+  replyingTo: null,
+  editingMessage: null,
+  newServerIcon: null,
+  editServerIcon: null,
+  editingServerId: null,
+  editingChannelId: null,
+  creatingVoice: false,
+  forwardingMessage: null,
+  searchResults: [],
+  settings: { notifications: true, sounds: true, privacy: 'everyone' }
 };
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+// ============ UTILS ============
+function qS(s) { return document.querySelector(s); }
+function qSA(s) { return document.querySelectorAll(s); }
+
+function escapeHtml(t) {
+  if (!t) return '';
+  var d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
 }
 
 function displayStatus(s) {
-  return { online: 'В сети', idle: 'Не активен', dnd: 'Не беспокоить', invisible: 'Невидимый', offline: 'Не в сети' }[s] || 'В сети';
+  var map = { online: 'В сети', idle: 'Не активен', dnd: 'Не беспокоить', invisible: 'Невидимый', offline: 'Не в сети' };
+  return map[s] || 'В сети';
 }
 
+function formatTime(ts) {
+  var d = new Date(ts);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+
+function formatDate(ts) {
+  var d = new Date(ts);
+  var today = new Date();
+  if (d.toDateString() === today.toDateString()) return 'Сегодня';
+  var yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('ru-RU');
+}
+
+// ============ WEBSOCKET ============
 function send(data) {
-  if (state.ws?.readyState === WebSocket.OPEN) {
+  if (state.ws && state.ws.readyState === 1) {
     state.ws.send(JSON.stringify(data));
     return true;
   }
   return false;
 }
 
-function connect() {
-  state.ws = new WebSocket(WS_URL);
-  
-  state.ws.onopen = () => console.log('Connected');
-  state.ws.onclose = () => setTimeout(connect, 3000);
-  state.ws.onerror = e => console.error('WS Error:', e);
-  state.ws.onmessage = e => handleMessage(JSON.parse(e.data));
+var pingInterval = null;
+
+function startPing() {
+  stopPing();
+  pingInterval = setInterval(function() {
+    send({ type: 'ping' });
+  }, 25000);
 }
 
+function stopPing() {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+  }
+}
+
+function showConnecting() {
+  var el = qS('#connecting-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'connecting-overlay';
+    el.innerHTML = '<div class="connecting-box"><div class="connecting-spinner"></div><div class="connecting-text">Подключение к серверу...</div><div class="connecting-hint">Первое подключение может занять до 30 секунд</div></div>';
+    document.body.appendChild(el);
+  }
+  el.classList.add('visible');
+}
+
+function hideConnecting() {
+  var el = qS('#connecting-overlay');
+  if (el) el.classList.remove('visible');
+}
+
+function connect() {
+  showConnecting();
+  state.ws = new WebSocket(WS_URL);
+  
+  state.ws.onopen = function() {
+    hideConnecting();
+    startPing();
+    tryAutoLogin();
+  };
+  
+  state.ws.onclose = function() {
+    stopPing();
+    setTimeout(connect, 3000);
+  };
+  
+  state.ws.onerror = function(e) {
+    console.error('WS error', e);
+  };
+  
+  state.ws.onmessage = function(e) {
+    handleMessage(JSON.parse(e.data));
+  };
+}
+
+function tryAutoLogin() {
+  var email = localStorage.getItem('lastEmail');
+  var pwd = localStorage.getItem('lastPwd');
+  if (email && pwd) {
+    send({ type: 'login', email: email, password: pwd });
+  }
+}
+
+
+// ============ MESSAGE HANDLER ============
 function handleMessage(msg) {
-  switch (msg.type) {
-    case 'auth_success':
+  var handlers = {
+    pong: function() {},
+    
+    auth_success: function() {
       state.userId = msg.userId;
-      state.username = msg.user?.name || msg.username || 'Пользователь';
-      closeModal('auth-modal');
-      if (Array.isArray(msg.servers)) msg.servers.forEach(s => state.servers.set(s.id, s));
-      if (Array.isArray(msg.friends)) msg.friends.forEach(f => state.friends.set(f.id, f));
-      if (Array.isArray(msg.pendingRequests)) state.pendingRequests = msg.pendingRequests;
-      if (Array.isArray(msg.dms)) msg.dms.forEach(d => state.dms.set(d.oderId, d));
+      state.username = msg.user.name;
+      state.userAvatar = msg.user.avatar;
+      state.userStatus = msg.user.status || 'online';
+      state.customStatus = msg.user.customStatus;
+      state.isGuest = msg.isGuest || false;
+      localStorage.setItem('session', JSON.stringify({ userId: msg.userId }));
+      
+      if (msg.servers) {
+        Object.values(msg.servers).forEach(function(srv) {
+          state.servers.set(srv.id, srv);
+        });
+      }
+      
+      if (msg.friends) {
+        msg.friends.forEach(function(f) {
+          state.friends.set(f.id, f);
+          state.dmChats.add(f.id);
+        });
+      }
+      
+      if (msg.pendingRequests) {
+        state.pendingRequests = msg.pendingRequests;
+      }
+      
+      qS('#auth-screen').classList.remove('active');
+      qS('#main-app').classList.remove('hidden');
+      updateUserPanel();
       renderServers();
       renderFriends();
+      renderDMList();
       loadAudioDevices();
-      console.log('Logged in as:', state.userId, state.username);
-      break;
-      
-    case 'auth_error':
-      const authErr = $('#auth-error');
-      if (authErr) authErr.textContent = msg.message || 'Ошибка авторизации';
-      break;
-      
-    case 'server_created':
-    case 'server_updated':
+    },
+    
+    auth_error: function() {
+      localStorage.removeItem('session');
+      localStorage.removeItem('lastEmail');
+      localStorage.removeItem('lastPwd');
+      var loginBox = qS('#login-box');
+      if (loginBox && !loginBox.classList.contains('hidden')) {
+        qS('#login-error').textContent = msg.message || 'Ошибка';
+      } else {
+        qS('#reg-error').textContent = msg.message || 'Ошибка';
+      }
+    },
+    
+    server_created: function() {
       state.servers.set(msg.server.id, msg.server);
       renderServers();
-      if (state.currentServer === msg.server.id) renderChannels();
-      break;
-      
-    case 'server_joined':
+      openServer(msg.server.id);
+      closeModal('create-server-modal');
+    },
+    
+    server_joined: function() {
       state.servers.set(msg.server.id, msg.server);
       renderServers();
-      break;
-      
-    case 'server_deleted':
-    case 'kicked_from_server':
+      openServer(msg.server.id);
+      closeModal('join-modal');
+    },
+    
+    server_updated: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        if (msg.name) srv.name = msg.name;
+        if (msg.icon !== undefined) srv.icon = msg.icon;
+        if (msg.region) srv.region = msg.region;
+        renderServers();
+        if (state.currentServer === msg.serverId) {
+          qS('#server-name').textContent = srv.name;
+        }
+      }
+    },
+    
+    server_deleted: function() {
       state.servers.delete(msg.serverId);
       if (state.currentServer === msg.serverId) {
         state.currentServer = null;
         state.currentChannel = null;
-        showView('home-view');
+        showView('friends-view');
+        qS('#server-view').classList.remove('active');
+        qS('#home-view').classList.add('active');
       }
       renderServers();
-      break;
-
-    case 'channel_created':
-    case 'channel_deleted':
-      const srv = state.servers.get(msg.serverId);
+    },
+    
+    server_left: function() {
+      state.servers.delete(msg.serverId);
+      if (state.currentServer === msg.serverId) {
+        state.currentServer = null;
+        state.currentChannel = null;
+        showView('friends-view');
+        qS('#server-view').classList.remove('active');
+        qS('#home-view').classList.add('active');
+      }
+      renderServers();
+      if (msg.kicked) showNotification('Вы были исключены с сервера');
+      if (msg.banned) showNotification('Вы были забанены на сервере');
+    },
+    
+    channel_created: function() {
+      var srv = state.servers.get(msg.serverId);
       if (srv) {
-        if (msg.type === 'channel_created') {
-          srv.channels = srv.channels || [];
-          srv.channels.push(msg.channel);
+        if (msg.isVoice) {
+          srv.voiceChannels.push(msg.channel);
         } else {
-          srv.channels = srv.channels.filter(c => c.id !== msg.channelId);
+          srv.channels.push(msg.channel);
+          srv.messages[msg.channel.id] = [];
         }
         if (state.currentServer === msg.serverId) renderChannels();
       }
-      break;
-      
-    case 'message':
-      if (msg.channelId && state.currentChannel === msg.channelId) {
-        appendMessage(msg);
-      } else if (msg.oderId) {
-        const dm = state.dms.get(msg.oderId) || { oderId: msg.oderId, messages: [] };
-        dm.messages = dm.messages || [];
-        dm.messages.push(msg);
-        state.dms.set(msg.oderId, dm);
-        if (state.currentDM === msg.oderId) appendMessage(msg, true);
+      closeModal('channel-modal');
+    },
+    
+    channel_updated: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        var channels = msg.isVoice ? srv.voiceChannels : srv.channels;
+        var ch = channels.find(function(c) { return c.id === msg.channelId; });
+        if (ch) ch.name = msg.name;
+        if (state.currentServer === msg.serverId) renderChannels();
       }
-      break;
-      
-    case 'messages_history':
-      if (msg.channelId) {
-        const server = state.servers.get(state.currentServer);
-        if (server) {
-          const ch = server.channels?.find(c => c.id === msg.channelId);
-          if (ch) ch.messages = msg.messages;
+    },
+    
+    channel_deleted: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        if (msg.isVoice) {
+          srv.voiceChannels = srv.voiceChannels.filter(function(c) { return c.id !== msg.channelId; });
+        } else {
+          srv.channels = srv.channels.filter(function(c) { return c.id !== msg.channelId; });
+          delete srv.messages[msg.channelId];
         }
-        renderMessages();
-      } else if (msg.oderId) {
-        const dm = state.dms.get(msg.oderId) || { oderId: msg.oderId };
-        dm.messages = msg.messages;
-        state.dms.set(msg.oderId, dm);
+        if (state.currentChannel === msg.channelId) {
+          state.currentChannel = null;
+          if (srv.channels[0]) openChannel(srv.channels[0].id);
+        }
+        if (state.currentServer === msg.serverId) renderChannels();
+      }
+    },
+
+    
+    message: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        if (!srv.messages[msg.channel]) srv.messages[msg.channel] = [];
+        srv.messages[msg.channel].push(msg.message);
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channel) {
+          appendMessage(msg.message);
+        }
+      }
+    },
+    
+    message_edited: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m) {
+          m.text = msg.text;
+          m.edited = true;
+          m.editedAt = msg.editedAt;
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
+    message_deleted: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        srv.messages[msg.channelId] = srv.messages[msg.channelId].filter(function(m) {
+          return m.id != msg.messageId;
+        });
+        srv.messages[msg.channelId].forEach(function(m) {
+          if (m.replyTo && m.replyTo.id == msg.messageId) {
+            m.replyTo.deleted = true;
+          }
+        });
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
+    reaction_added: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m) {
+          if (!m.reactions) m.reactions = {};
+          if (!m.reactions[msg.emoji]) m.reactions[msg.emoji] = [];
+          if (!m.reactions[msg.emoji].includes(msg.userId)) {
+            m.reactions[msg.emoji].push(msg.userId);
+          }
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
+    reaction_removed: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && srv.messages[msg.channelId]) {
+        var m = srv.messages[msg.channelId].find(function(x) { return x.id == msg.messageId; });
+        if (m && m.reactions && m.reactions[msg.emoji]) {
+          var idx = m.reactions[msg.emoji].indexOf(msg.userId);
+          if (idx !== -1) m.reactions[msg.emoji].splice(idx, 1);
+          if (m.reactions[msg.emoji].length === 0) delete m.reactions[msg.emoji];
+        }
+        if (state.currentServer === msg.serverId && state.currentChannel === msg.channelId) {
+          renderMessages(srv.messages[msg.channelId]);
+        }
+      }
+    },
+    
+    dm: function() {
+      var senderId = msg.message.from;
+      if (msg.sender) state.friends.set(senderId, msg.sender);
+      if (!state.dmMessages.has(senderId)) state.dmMessages.set(senderId, []);
+      state.dmMessages.get(senderId).push(msg.message);
+      state.dmChats.add(senderId);
+      renderDMList();
+      if (state.currentDM === senderId) {
+        appendDMMessage(msg.message);
+      }
+      if (state.settings.notifications) {
+        showNotification('Новое сообщение от ' + (msg.sender?.name || 'User'));
+      }
+    },
+    
+    dm_sent: function() {
+      var toId = msg.to;
+      if (msg.recipient) state.friends.set(toId, msg.recipient);
+      if (!state.dmMessages.has(toId)) state.dmMessages.set(toId, []);
+      state.dmMessages.get(toId).push(msg.message);
+      state.dmChats.add(toId);
+      renderDMList();
+      if (state.currentDM === toId) {
+        removePendingMessages();
+        appendDMMessage(msg.message);
+      }
+    },
+    
+    dm_error: function() {
+      showNotification(msg.message || 'Ошибка отправки');
+    },
+    
+    dm_history: function() {
+      state.dmMessages.set(msg.oderId, msg.messages || []);
+      if (state.currentDM === msg.oderId) {
         renderDMMessages();
       }
-      break;
-      
-    case 'friend_request_received':
-      state.pendingRequests.push(msg.from);
+    },
+
+    
+    friend_request_sent: function() {
+      showNotification('Заявка в друзья отправлена');
+    },
+    
+    friend_error: function() {
+      showNotification(msg.message || 'Ошибка');
+    },
+    
+    friend_request_incoming: function() {
+      state.pendingRequests.push(msg.user);
       renderFriends();
-      break;
-      
-    case 'friend_added':
-      state.friends.set(msg.friend.id, msg.friend);
-      state.pendingRequests = state.pendingRequests.filter(r => r.id !== msg.friend.id);
+      showNotification(msg.user.name + ' хочет добавить вас в друзья');
+    },
+    
+    friend_added: function() {
+      state.friends.set(msg.user.id, msg.user);
+      state.pendingRequests = state.pendingRequests.filter(function(r) { return r.id !== msg.user.id; });
+      state.dmChats.add(msg.user.id);
       renderFriends();
-      break;
-      
-    case 'friend_removed':
+      renderDMList();
+      showNotification(msg.user.name + ' теперь ваш друг');
+    },
+    
+    friend_removed: function() {
       state.friends.delete(msg.oderId);
       renderFriends();
-      break;
-      
-    case 'friend_status':
-      const friend = state.friends.get(msg.oderId);
-      if (friend) {
-        friend.status = msg.status;
-        renderFriends();
-      }
-      break;
-      
-    case 'invite_created':
-      const codeDisplay = $('#invite-code-display');
-      if (codeDisplay) codeDisplay.value = msg.code;
+    },
+    
+    friends_list: function() {
+      state.friends.clear();
+      msg.friends.forEach(function(f) {
+        state.friends.set(f.id, f);
+        state.dmChats.add(f.id);
+      });
+      state.pendingRequests = msg.requests || [];
+      renderFriends();
+      renderDMList();
+    },
+    
+    user_blocked: function() {
+      state.blockedUsers.add(msg.oderId);
+      state.friends.delete(msg.oderId);
+      renderFriends();
+      showNotification('Пользователь заблокирован');
+    },
+    
+    user_unblocked: function() {
+      state.blockedUsers.delete(msg.oderId);
+      showNotification('Пользователь разблокирован');
+    },
+    
+    invite_created: function() {
+      qS('#invite-code-display').value = msg.code;
       openModal('invite-modal');
-      break;
-      
-    case 'user_profile':
-      showUserProfileData(msg.user);
-      break;
-      
-    case 'typing':
-      showTyping(msg.userId, msg.username);
-      break;
-      
-    case 'voice_users':
-      state.voiceUsers = new Map(msg.users.map(u => [u.id, u]));
-      renderVoiceUsers();
-      break;
-      
-    case 'voice_signal':
-      handleVoiceSignal(msg);
-      break;
-      
-    case 'call_incoming':
-      handleIncomingCall(msg);
-      break;
-      
-    case 'error':
-      alert(msg.message || 'Произошла ошибка');
-      break;
-  }
+    },
+    
+    invite_error: function() {
+      qS('#invite-error').textContent = msg.message;
+    },
+    
+    profile_updated: function() {
+      state.username = msg.user.name;
+      state.userAvatar = msg.user.avatar;
+      state.userStatus = msg.user.status;
+      state.customStatus = msg.user.customStatus;
+      updateUserPanel();
+    },
+    
+    settings_updated: function() {
+      state.settings = msg.settings;
+    },
+    
+    user_join: function() {
+      if (msg.user) {
+        state.friends.set(msg.user.id, msg.user);
+        renderFriends();
+        if (state.currentServer) {
+          send({ type: 'get_server_members', serverId: state.currentServer });
+        }
+      }
+    },
+    
+    user_leave: function() {
+      var f = state.friends.get(msg.oderId);
+      if (f) {
+        f.status = 'offline';
+        renderFriends();
+        if (state.currentServer) {
+          send({ type: 'get_server_members', serverId: state.currentServer });
+        }
+      }
+    },
+    
+    user_update: function() {
+      if (msg.user) {
+        state.friends.set(msg.user.id, msg.user);
+        renderFriends();
+        if (state.currentServer) {
+          send({ type: 'get_server_members', serverId: state.currentServer });
+        }
+      }
+    },
+    
+    server_members: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) srv.membersData = msg.members;
+      if (state.currentServer === msg.serverId) renderMembers();
+    },
+    
+    member_joined: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && msg.user) {
+        if (!srv.members.includes(msg.user.id)) srv.members.push(msg.user.id);
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
+    member_left: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.members = srv.members.filter(function(m) { return m !== msg.oderId; });
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
+    member_banned: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.members = srv.members.filter(function(m) { return m !== msg.oderId; });
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
+    role_created: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.roles.push(msg.role);
+      }
+    },
+    
+    role_updated: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        var idx = srv.roles.findIndex(function(r) { return r.id === msg.role.id; });
+        if (idx !== -1) srv.roles[idx] = msg.role;
+      }
+    },
+    
+    role_deleted: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.roles = srv.roles.filter(function(r) { return r.id !== msg.roleId; });
+      }
+    },
+    
+    role_assigned: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.memberRoles[msg.memberId] = msg.roleId;
+        if (state.currentServer === msg.serverId) {
+          send({ type: 'get_server_members', serverId: msg.serverId });
+        }
+      }
+    },
+    
+    voice_state_update: function() {
+      // Update voice users display
+      if (state.currentServer === msg.serverId) {
+        renderVoiceUsers(msg.channelId, msg.users);
+      }
+    },
+    
+    search_results: function() {
+      state.searchResults = msg.results;
+      renderSearchResults();
+    },
+    
+    user_search_results: function() {
+      renderUserSearchResults(msg.results);
+    }
+  };
+  
+  if (handlers[msg.type]) handlers[msg.type]();
 }
 
-function showView(viewId) {
-  $$('.view').forEach(v => v.classList.remove('active'));
-  const view = $(`#${viewId}`);
-  if (view) view.classList.add('active');
+
+// ============ UI HELPERS ============
+function showView(id) {
+  qSA('.main-view').forEach(function(v) { v.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
 }
 
 function openModal(id) {
-  const modal = $(`#${id}`);
-  if (modal) modal.classList.add('active');
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
 }
 
 function closeModal(id) {
-  const modal = $(`#${id}`);
-  if (modal) modal.classList.remove('active');
+  var el = document.getElementById(id);
+  if (el) el.classList.remove('active');
 }
 
 function hideContextMenu() {
-  const serverCtx = $('#server-context');
-  const memberCtx = $('#member-context');
-  if (serverCtx) serverCtx.classList.remove('active');
-  if (memberCtx) memberCtx.classList.remove('active');
+  qSA('.context-menu').forEach(function(m) { m.classList.remove('visible'); });
 }
 
-// Render functions
-function renderServers() {
-  const container = $('#servers-list');
-  if (!container) return;
-  
-  const homeBtn = container.querySelector('.home-btn');
-  const addBtn = container.querySelector('.add-server');
-  const divider = container.querySelector('.server-divider');
-  
-  container.querySelectorAll('.server-btn:not(.home-btn):not(.add-server)').forEach(el => el.remove());
-  
-  state.servers.forEach(server => {
-    const btn = document.createElement('div');
-    btn.className = 'server-btn';
-    btn.dataset.id = server.id;
-    btn.title = server.name;
-    
-    if (server.icon) {
-      btn.innerHTML = `<img src="${server.icon}" alt="${escapeHtml(server.name)}">`;
+function showNotification(text) {
+  var n = document.createElement('div');
+  n.className = 'notification';
+  n.textContent = text;
+  document.body.appendChild(n);
+  setTimeout(function() { n.classList.add('show'); }, 10);
+  setTimeout(function() {
+    n.classList.remove('show');
+    setTimeout(function() { n.remove(); }, 300);
+  }, 3000);
+}
+
+function updateUserPanel() {
+  var av = qS('#user-avatar');
+  var nm = qS('#user-name');
+  var st = qS('#user-status');
+  if (av) {
+    if (state.userAvatar) {
+      av.innerHTML = '<img src="' + state.userAvatar + '">';
     } else {
-      btn.textContent = server.name.charAt(0).toUpperCase();
+      av.innerHTML = '';
+      av.textContent = state.username ? state.username.charAt(0).toUpperCase() : '?';
     }
-    
-    btn.onclick = () => openServer(server.id);
-    btn.oncontextmenu = e => {
-      e.preventDefault();
-      state.contextServer = server.id;
-      showServerContext(e.clientX, e.clientY, server);
-    };
-    
-    container.insertBefore(btn, addBtn);
-  });
+  }
+  if (nm) nm.textContent = state.username || 'Гость';
+  if (st) st.textContent = state.customStatus || displayStatus(state.userStatus);
 }
 
-
-function showServerContext(x, y, server) {
-  const ctx = $('#server-context');
-  if (!ctx) return;
+// ============ RENDER FUNCTIONS ============
+function renderServers() {
+  var c = qS('#servers-list');
+  if (!c) return;
   
-  const kickBtn = ctx.querySelector('[data-action="kick"]');
-  if (kickBtn) kickBtn.style.display = server.ownerId === state.userId ? 'flex' : 'none';
+  var old = c.querySelectorAll('.server-btn:not(.home-btn):not(.add-server):not(.join-server)');
+  old.forEach(function(el) { el.remove(); });
   
-  ctx.style.left = x + 'px';
-  ctx.style.top = y + 'px';
-  ctx.classList.add('active');
+  var add = c.querySelector('.add-server');
+  state.servers.forEach(function(srv) {
+    var b = document.createElement('div');
+    b.className = 'server-btn';
+    b.dataset.id = srv.id;
+    b.title = srv.name;
+    if (srv.icon) {
+      b.classList.add('has-icon');
+      b.innerHTML = '<img src="' + srv.icon + '">';
+    } else {
+      b.textContent = srv.name.charAt(0).toUpperCase();
+    }
+    b.onclick = function() { openServer(srv.id); };
+    b.oncontextmenu = function(e) {
+      e.preventDefault();
+      showServerContext(e.clientX, e.clientY, srv);
+    };
+    c.insertBefore(b, add);
+  });
 }
 
 function renderChannels() {
-  const server = state.servers.get(state.currentServer);
-  if (!server) return;
+  var srv = state.servers.get(state.currentServer);
+  if (!srv) return;
   
-  const textList = $('#text-channels');
-  const voiceList = $('#voice-channels');
-  if (!textList || !voiceList) return;
+  var tl = qS('#channel-list');
+  var vl = qS('#voice-list');
+  if (!tl || !vl) return;
   
-  const textChannels = (server.channels || []).filter(c => !c.isVoice);
-  const voiceChannels = (server.channels || []).filter(c => c.isVoice);
-  
-  textList.innerHTML = textChannels.map(c => `
-    <div class="channel ${state.currentChannel === c.id ? 'active' : ''}" data-id="${c.id}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>
-      <span>${escapeHtml(c.name)}</span>
-    </div>
-  `).join('');
-  
-  voiceList.innerHTML = voiceChannels.map(c => `
-    <div class="channel voice ${state.voiceChannel === c.id ? 'active' : ''}" data-id="${c.id}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-      <span>${escapeHtml(c.name)}</span>
-      ${state.voiceChannel === c.id ? '<div class="voice-users-mini" id="voice-users-mini"></div>' : ''}
-    </div>
-  `).join('');
-  
-  textList.querySelectorAll('.channel').forEach(el => {
-    el.onclick = () => openChannel(el.dataset.id);
+  var th = '';
+  (srv.channels || []).forEach(function(c) {
+    th += '<div class="channel-item' + (state.currentChannel === c.id ? ' active' : '') + '" data-id="' + c.id + '">';
+    th += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>';
+    th += '<span>' + escapeHtml(c.name) + '</span></div>';
   });
+  tl.innerHTML = th;
   
-  voiceList.querySelectorAll('.channel').forEach(el => {
-    el.onclick = () => joinVoiceChannel(el.dataset.id);
+  var vh = '';
+  (srv.voiceChannels || []).forEach(function(vc) {
+    vh += '<div class="voice-item' + (state.voiceChannel === vc.id ? ' connected' : '') + '" data-id="' + vc.id + '">';
+    vh += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>';
+    vh += '<span>' + escapeHtml(vc.name) + '</span>';
+    if (vc.isTemporary) vh += '<span class="temp-badge">temp</span>';
+    vh += '</div>';
   });
+  vl.innerHTML = vh;
   
-  renderMembers();
-}
-
-function renderMembers() {
-  const server = state.servers.get(state.currentServer);
-  const list = $('#members-list');
-  if (!server || !list) return;
-  
-  const members = server.members || [];
-  
-  list.innerHTML = members.map(m => `
-    <div class="member" data-id="${m.id}">
-      <div class="avatar ${m.status || 'offline'}">${m.avatar ? `<img src="${m.avatar}">` : m.name?.charAt(0).toUpperCase() || '?'}</div>
-      <div class="member-info">
-        <div class="member-name">
-          ${escapeHtml(m.name || 'User')}
-          ${m.id === server.ownerId ? '<svg class="crown" viewBox="0 0 24 24" fill="currentColor"><path d="M2.5 19h19v2h-19v-2zm19.57-9.36c-.21-.8-1.04-1.28-1.84-1.06l-4.23 1.12-3.47-5.46c-.42-.66-1.34-.87-2.06-.47-.72.4-.94 1.3-.52 1.96l3.47 5.46-4.23 1.12c-.8.21-1.28 1.04-1.06 1.84l1.53 5.85h12.84l1.53-5.85c.22-.8-.26-1.63-1.06-1.84l-4.23-1.12 3.47-5.46c.42-.66.2-1.56-.52-1.96-.72-.4-1.64-.19-2.06.47l-3.47 5.46-4.23-1.12c-.8-.22-1.63.26-1.84 1.06z"/></svg>' : ''}
-        </div>
-        <div class="member-status">${displayStatus(m.status)}</div>
-      </div>
-    </div>
-  `).join('');
-  
-  list.querySelectorAll('.member').forEach(el => {
-    el.oncontextmenu = e => {
+  tl.querySelectorAll('.channel-item').forEach(function(el) {
+    el.onclick = function() { openChannel(el.dataset.id); };
+    el.oncontextmenu = function(e) {
       e.preventDefault();
-      state.contextMember = el.dataset.id;
-      showMemberContext(e.clientX, e.clientY);
+      showChannelContext(e.clientX, e.clientY, el.dataset.id, false);
+    };
+  });
+  
+  vl.querySelectorAll('.voice-item').forEach(function(el) {
+    el.onclick = function() { joinVoiceChannel(el.dataset.id); };
+    el.oncontextmenu = function(e) {
+      e.preventDefault();
+      showChannelContext(e.clientX, e.clientY, el.dataset.id, true);
     };
   });
 }
 
-function showMemberContext(x, y) {
-  const ctx = $('#member-context');
-  if (!ctx) return;
-  
-  const server = state.servers.get(state.currentServer);
-  const kickBtn = ctx.querySelector('[data-action="kick"]');
-  
-  if (kickBtn) {
-    const isOwner = server?.ownerId === state.userId;
-    const isTargetOwner = state.contextMember === server?.ownerId;
-    kickBtn.style.display = isOwner && !isTargetOwner ? 'flex' : 'none';
-  }
-  
-  ctx.style.left = x + 'px';
-  ctx.style.top = y + 'px';
-  ctx.classList.add('active');
-}
 
-function renderFriends() {
-  const online = [...state.friends.values()].filter(f => f.status === 'online');
-  const onlineList = $('#online-users');
-  const allList = $('#all-users');
-  const pendingList = $('#pending-users');
-  const pendingTab = $('.friends-tab[data-view="pending"]');
+function renderMembers() {
+  var srv = state.servers.get(state.currentServer);
+  var ol = qS('#members-online');
+  var ofl = qS('#members-offline');
+  if (!srv || !ol || !ofl) return;
   
-  if (onlineList) {
-    onlineList.innerHTML = online.length 
-      ? online.map(u => userItemHTML(u)).join('') 
-      : '<div class="empty">Нет друзей в сети</div>';
-  }
+  var mems = srv.membersData || [];
+  var on = mems.filter(function(m) { return m.status === 'online'; });
+  var off = mems.filter(function(m) { return m.status !== 'online'; });
   
-  if (allList) {
-    allList.innerHTML = state.friends.size 
-      ? [...state.friends.values()].map(u => userItemHTML(u)).join('') 
-      : '<div class="empty">Нет друзей</div>';
-  }
+  qS('#online-count').textContent = on.length;
+  qS('#offline-count').textContent = off.length;
   
-  if (pendingList) {
-    pendingList.innerHTML = state.pendingRequests.length 
-      ? state.pendingRequests.map(u => pendingItemHTML(u)).join('') 
-      : '<div class="empty">Нет запросов</div>';
-    
-    pendingList.querySelectorAll('.accept-btn').forEach(btn => {
-      btn.onclick = () => send({ type: 'accept_friend', oderId: btn.dataset.id });
-    });
-    pendingList.querySelectorAll('.reject-btn').forEach(btn => {
-      btn.onclick = () => send({ type: 'reject_friend', oderId: btn.dataset.id });
-    });
-  }
+  ol.innerHTML = on.map(memberHTML).join('');
+  ofl.innerHTML = off.map(memberHTML).join('');
   
-  if (pendingTab) {
-    const badge = pendingTab.querySelector('.pending-badge') || document.createElement('span');
-    badge.className = 'pending-badge';
-    badge.textContent = state.pendingRequests.length || '';
-    badge.style.display = state.pendingRequests.length ? 'inline' : 'none';
-    if (!pendingTab.querySelector('.pending-badge')) pendingTab.appendChild(badge);
-  }
-  
-  bindUserActions();
-}
-
-function userItemHTML(u) {
-  return `
-    <div class="user-item" data-id="${u.id}">
-      <div class="avatar ${u.status || 'offline'}">${u.avatar ? `<img src="${u.avatar}">` : u.name?.charAt(0).toUpperCase() || '?'}</div>
-      <div class="user-info">
-        <div class="user-name">${escapeHtml(u.name || 'User')}</div>
-        <div class="user-status">${displayStatus(u.status)}</div>
-      </div>
-      <div class="user-actions">
-        <button class="msg-btn icon-btn" data-id="${u.id}" title="Написать">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-function pendingItemHTML(u) {
-  return `
-    <div class="user-item pending" data-id="${u.id}">
-      <div class="avatar">${u.avatar ? `<img src="${u.avatar}">` : u.name?.charAt(0).toUpperCase() || '?'}</div>
-      <div class="user-info">
-        <div class="user-name">${escapeHtml(u.name || 'User')}</div>
-        <div class="user-status">Хочет добавить вас в друзья</div>
-      </div>
-      <div class="user-actions">
-        <button class="accept-btn icon-btn" data-id="${u.id}" title="Принять">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-        </button>
-        <button class="reject-btn icon-btn" data-id="${u.id}" title="Отклонить">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-function bindUserActions() {
-  $$('.msg-btn').forEach(btn => {
-    btn.onclick = () => openDM(btn.dataset.id);
+  // Bind member context menu
+  qSA('.member-item').forEach(function(el) {
+    el.oncontextmenu = function(e) {
+      e.preventDefault();
+      showMemberContext(e.clientX, e.clientY, el.dataset.id);
+    };
   });
 }
 
+function memberHTML(m) {
+  var crown = m.isOwner ? '<svg class="crown-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>' : '';
+  var role = m.role && m.role !== 'default' ? '<span class="role-badge">' + escapeHtml(m.role) + '</span>' : '';
+  return '<div class="member-item" data-id="' + m.id + '">' +
+    '<div class="avatar ' + (m.status || 'offline') + '">' + (m.avatar ? '<img src="' + m.avatar + '">' : (m.name ? m.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+    '<span>' + escapeHtml(m.name || 'User') + crown + role + '</span></div>';
+}
 
-function renderMessages() {
-  const server = state.servers.get(state.currentServer);
-  const channel = server?.channels?.find(c => c.id === state.currentChannel);
-  const container = $('#messages');
-  if (!container) return;
+function renderFriends() {
+  var all = [];
+  state.friends.forEach(function(f) { all.push(f); });
+  var online = all.filter(function(f) { return f.status === 'online'; });
   
-  const messages = channel?.messages || [];
-  container.innerHTML = messages.map(m => messageHTML(m)).join('');
-  container.scrollTop = container.scrollHeight;
+  var ol = qS('#online-users');
+  var al = qS('#all-users');
+  var pl = qS('#pending-users');
+  var pc = qS('#pending-count');
+  
+  if (ol) ol.innerHTML = online.length ? online.map(userItemHTML).join('') : '<div class="empty">Нет друзей в сети</div>';
+  if (al) al.innerHTML = all.length ? all.map(userItemHTML).join('') : '<div class="empty">Нет друзей</div>';
+  
+  if (pl) {
+    pl.innerHTML = state.pendingRequests.length ? state.pendingRequests.map(pendingItemHTML).join('') : '<div class="empty">Нет запросов</div>';
+    
+    pl.querySelectorAll('.accept-btn').forEach(function(b) {
+      b.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        send({ type: 'friend_accept', from: b.dataset.id });
+      };
+    });
+    
+    pl.querySelectorAll('.reject-btn').forEach(function(b) {
+      b.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        send({ type: 'friend_reject', from: b.dataset.id });
+        state.pendingRequests = state.pendingRequests.filter(function(r) { return r.id !== b.dataset.id; });
+        renderFriends();
+      };
+    });
+  }
+  
+  if (pc) pc.textContent = state.pendingRequests.length || '';
+  
+  qSA('.msg-btn').forEach(function(b) {
+    b.onclick = function() { openDM(b.dataset.id); };
+  });
+}
+
+function userItemHTML(u) {
+  return '<div class="user-item" data-id="' + u.id + '">' +
+    '<div class="avatar ' + (u.status || 'offline') + '">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+    '<div class="info"><div class="name">' + escapeHtml(u.name || 'User') + '</div><div class="status">' + (u.customStatus || displayStatus(u.status)) + '</div></div>' +
+    '<div class="actions"><button class="msg-btn" data-id="' + u.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div></div>';
+}
+
+function pendingItemHTML(u) {
+  return '<div class="user-item" data-id="' + u.id + '">' +
+    '<div class="avatar">' + (u.name ? u.name.charAt(0).toUpperCase() : '?') + '</div>' +
+    '<div class="info"><div class="name">' + escapeHtml(u.name || 'User') + '</div><div class="status">Хочет добавить вас</div></div>' +
+    '<div class="actions">' +
+    '<button class="accept-btn" data-id="' + u.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></button>' +
+    '<button class="reject-btn" data-id="' + u.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
+    '</div></div>';
+}
+
+function renderDMList() {
+  var dl = qS('#dm-list');
+  if (!dl) return;
+  
+  var h = '';
+  state.dmChats.forEach(function(oderId) {
+    var f = state.friends.get(oderId);
+    if (!f) {
+      var msgs = state.dmMessages.get(oderId);
+      if (msgs && msgs.length > 0) {
+        var lastMsg = msgs[msgs.length - 1];
+        f = { id: oderId, name: lastMsg.author || 'User', avatar: lastMsg.avatar, status: 'offline' };
+      }
+    }
+    if (f && f.name) {
+      h += '<div class="dm-item' + (state.currentDM === oderId ? ' active' : '') + '" data-id="' + oderId + '">' +
+        '<div class="avatar ' + (f.status || 'offline') + '">' + (f.avatar ? '<img src="' + f.avatar + '">' : f.name.charAt(0).toUpperCase()) + '</div>' +
+        '<span>' + escapeHtml(f.name) + '</span></div>';
+    }
+  });
+  dl.innerHTML = h;
+  
+  dl.querySelectorAll('.dm-item').forEach(function(el) {
+    el.onclick = function() { openDM(el.dataset.id); };
+  });
+}
+
+function renderVoiceUsers(channelId, users) {
+  var vu = qS('#voice-users');
+  if (!vu || state.voiceChannel !== channelId) return;
+  
+  vu.innerHTML = (users || []).map(function(u) {
+    return '<div class="voice-user' + (u.muted ? ' muted' : '') + '">' +
+      '<div class="avatar">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+      '<span>' + escapeHtml(u.name) + '</span>' +
+      (u.muted ? '<svg class="muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>' : '') +
+      (u.video ? '<svg class="video-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>' : '') +
+      (u.screen ? '<svg class="screen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function renderSearchResults() {
+  // Implement search results rendering
+}
+
+
+function renderUserSearchResults(results) {
+  var sr = qS('#search-results');
+  if (!sr) return;
+  
+  if (!results || results.length === 0) {
+    sr.innerHTML = '<div class="empty">Пользователь не найден</div>';
+    return;
+  }
+  
+  sr.innerHTML = results.map(function(u) {
+    return '<div class="user-item search-result" data-id="' + u.id + '">' +
+      '<div class="avatar">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
+      '<div class="info"><div class="name">' + escapeHtml(u.name) + '</div></div>' +
+      '<div class="actions"><button class="add-friend-btn" data-name="' + escapeHtml(u.name) + '">Добавить</button></div></div>';
+  }).join('');
+  
+  sr.querySelectorAll('.add-friend-btn').forEach(function(b) {
+    b.onclick = function() {
+      send({ type: 'friend_request', name: b.dataset.name });
+    };
+  });
+}
+
+// ============ MESSAGES ============
+function messageHTML(m) {
+  var t = formatTime(m.time || Date.now());
+  var a = m.author || 'User';
+  var txt = m.text || '';
+  var pendingClass = m.pending ? ' pending' : '';
+  var editedMark = m.edited ? '<span class="edited">(ред.)</span>' : '';
+  
+  var replyHtml = '';
+  if (m.replyTo) {
+    if (m.replyTo.deleted) {
+      replyHtml = '<div class="message-reply deleted"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><span class="reply-content">Сообщение удалено</span></div>';
+    } else {
+      var ra = m.replyTo.author || '?';
+      var rav = m.replyTo.avatar;
+      replyHtml = '<div class="message-reply" data-reply-id="' + m.replyTo.id + '">' +
+        '<div class="reply-avatar">' + (rav ? '<img src="' + rav + '">' : ra.charAt(0).toUpperCase()) + '</div>' +
+        '<span class="reply-author">' + escapeHtml(ra) + '</span>' +
+        '<span class="reply-content">' + escapeHtml((m.replyTo.text || '').substring(0, 50)) + '</span></div>';
+    }
+  }
+  
+  var forwardedHtml = '';
+  if (m.forwarded) {
+    forwardedHtml = '<div class="forwarded-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>Переслано от ' + escapeHtml(m.forwarded.from) + '</div>';
+  }
+  
+  var reactionsHtml = '';
+  if (m.reactions && Object.keys(m.reactions).length > 0) {
+    reactionsHtml = '<div class="reactions">';
+    Object.entries(m.reactions).forEach(function(entry) {
+      var emoji = entry[0];
+      var users = entry[1];
+      var isMyReaction = users.includes(state.userId);
+      reactionsHtml += '<button class="reaction' + (isMyReaction ? ' my-reaction' : '') + '" data-emoji="' + emoji + '" data-msg-id="' + m.id + '">' + emoji + ' ' + users.length + '</button>';
+    });
+    reactionsHtml += '</div>';
+  }
+  
+  var attachmentsHtml = '';
+  if (m.attachments && m.attachments.length > 0) {
+    attachmentsHtml = '<div class="attachments">';
+    m.attachments.forEach(function(att) {
+      if (att.type === 'image') {
+        attachmentsHtml += '<img src="' + att.url + '" class="attachment-image">';
+      } else if (att.type === 'file') {
+        attachmentsHtml += '<a href="' + att.url + '" class="attachment-file" download>' + escapeHtml(att.name) + '</a>';
+      }
+    });
+    attachmentsHtml += '</div>';
+  }
+  
+  return '<div class="message' + (m.replyTo ? ' has-reply' : '') + pendingClass + '" data-id="' + m.id + '" data-author-id="' + (m.oderId || '') + '" data-author="' + escapeHtml(a) + '" data-text="' + escapeHtml(txt) + '">' +
+    replyHtml + forwardedHtml +
+    '<div class="message-body">' +
+    '<div class="avatar">' + (m.avatar ? '<img src="' + m.avatar + '">' : a.charAt(0).toUpperCase()) + '</div>' +
+    '<div class="content">' +
+    '<div class="header"><span class="author">' + escapeHtml(a) + '</span><span class="time">' + t + '</span>' + editedMark + '</div>' +
+    '<div class="text">' + escapeHtml(txt) + '</div>' +
+    attachmentsHtml +
+    reactionsHtml +
+    '</div></div></div>';
+}
+
+function renderMessages(msgs) {
+  var c = qS('#messages');
+  if (!c) return;
+  c.innerHTML = (msgs || []).map(messageHTML).join('');
+  c.scrollTop = c.scrollHeight;
+  bindMessageEvents();
+}
+
+function appendMessage(m) {
+  var c = qS('#messages');
+  if (!c) return;
+  c.insertAdjacentHTML('beforeend', messageHTML(m));
+  c.scrollTop = c.scrollHeight;
+  bindMessageEvents();
 }
 
 function renderDMMessages() {
-  const dm = state.dms.get(state.currentDM);
-  const container = $('#dm-messages');
-  if (!container) return;
-  
-  const messages = dm?.messages || [];
-  container.innerHTML = messages.map(m => messageHTML(m)).join('');
-  container.scrollTop = container.scrollHeight;
+  var c = qS('#dm-messages');
+  if (!c) return;
+  var msgs = state.dmMessages.get(state.currentDM) || [];
+  c.innerHTML = msgs.map(messageHTML).join('');
+  c.scrollTop = c.scrollHeight;
 }
 
-function messageHTML(m) {
-  const time = new Date(m.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `
-    <div class="message">
-      <div class="avatar">${m.avatar ? `<img src="${m.avatar}">` : m.username?.charAt(0).toUpperCase() || '?'}</div>
-      <div class="message-content">
-        <div class="message-header">
-          <span class="message-author">${escapeHtml(m.username || 'User')}</span>
-          <span class="message-time">${time}</span>
-        </div>
-        <div class="message-text">${escapeHtml(m.content || '')}</div>
-      </div>
-    </div>
-  `;
+function appendDMMessage(m) {
+  var c = qS('#dm-messages');
+  if (!c) return;
+  c.insertAdjacentHTML('beforeend', messageHTML(m));
+  c.scrollTop = c.scrollHeight;
 }
 
-function appendMessage(m, isDM = false) {
-  const container = isDM ? $('#dm-messages') : $('#messages');
-  if (!container) return;
-  
-  container.insertAdjacentHTML('beforeend', messageHTML(m));
-  container.scrollTop = container.scrollHeight;
+function removePendingMessages() {
+  qSA('#dm-messages .message.pending').forEach(function(el) { el.remove(); });
 }
 
-function showTyping(userId, username) {
-  const el = $('#typing-indicator');
-  if (!el || userId === state.userId) return;
+
+function bindMessageEvents() {
+  qSA('#messages .message').forEach(function(el) {
+    el.oncontextmenu = function(e) {
+      e.preventDefault();
+      var isOwn = el.dataset.authorId === state.userId;
+      showMessageContext(e.clientX, e.clientY, el.dataset.id, el.dataset.text, isOwn, el.dataset.author);
+    };
+  });
   
-  el.textContent = `${username} печатает...`;
-  el.style.display = 'block';
+  qSA('#messages .message-reply').forEach(function(el) {
+    el.onclick = function(e) {
+      e.stopPropagation();
+      var replyId = el.dataset.replyId;
+      if (!replyId) return;
+      var target = qS('.message[data-id="' + replyId + '"]');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.add('highlighted');
+        setTimeout(function() { target.classList.remove('highlighted'); }, 2000);
+      }
+    };
+  });
   
-  clearTimeout(el.timeout);
-  el.timeout = setTimeout(() => el.style.display = 'none', 3000);
+  // Reaction buttons
+  qSA('#messages .reaction').forEach(function(btn) {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      var emoji = btn.dataset.emoji;
+      var msgId = btn.dataset.msgId;
+      var isMyReaction = btn.classList.contains('my-reaction');
+      
+      if (isMyReaction) {
+        send({ type: 'remove_reaction', serverId: state.currentServer, channelId: state.currentChannel, messageId: msgId, emoji: emoji });
+      } else {
+        send({ type: 'add_reaction', serverId: state.currentServer, channelId: state.currentChannel, messageId: msgId, emoji: emoji });
+      }
+    };
+  });
 }
 
-// Navigation
-function openServer(serverId) {
-  state.currentServer = serverId;
+// ============ NAVIGATION ============
+function openServer(id) {
+  state.currentServer = id;
   state.currentDM = null;
+  var srv = state.servers.get(id);
   
-  const server = state.servers.get(serverId);
-  const serverName = $('#server-name');
-  if (serverName) serverName.textContent = server?.name || 'Сервер';
+  qS('#server-name').textContent = srv ? srv.name : 'Сервер';
   
-  $$('.server-btn').forEach(b => b.classList.toggle('active', b.dataset.id === serverId));
+  qSA('.server-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.id === id);
+  });
+  
+  qSA('.sidebar-view').forEach(function(v) { v.classList.remove('active'); });
+  qS('#server-view').classList.add('active');
+  qS('#members-panel').classList.add('visible');
   
   renderChannels();
-  showView('server-view');
+  send({ type: 'get_server_members', serverId: id });
   
-  const firstChannel = server?.channels?.find(c => !c.isVoice);
-  if (firstChannel) openChannel(firstChannel.id);
+  if (srv && srv.channels && srv.channels[0]) {
+    openChannel(srv.channels[0].id);
+  }
 }
 
-function openChannel(channelId) {
-  state.currentChannel = channelId;
+function openChannel(id) {
+  state.currentChannel = id;
+  var srv = state.servers.get(state.currentServer);
+  var ch = srv ? srv.channels.find(function(c) { return c.id === id; }) : null;
   
-  const server = state.servers.get(state.currentServer);
-  const channel = server?.channels?.find(c => c.id === channelId);
-  
-  const channelName = $('#channel-name');
-  const msgInput = $('#msg-input');
-  if (channelName) channelName.textContent = channel?.name || 'Канал';
-  if (msgInput) msgInput.placeholder = `Написать в #${channel?.name || 'канал'}`;
+  qS('#channel-name').textContent = ch ? ch.name : 'Канал';
+  qS('#msg-input').placeholder = 'Написать в #' + (ch ? ch.name : 'канал');
   
   renderChannels();
   showView('chat-view');
   
-  send({ type: 'get_messages', channelId });
+  var msgs = srv && srv.messages ? srv.messages[id] : [];
+  renderMessages(msgs || []);
 }
 
-function openDM(oderId) {
-  state.currentDM = oderId;
+function openDM(uid) {
+  state.currentDM = uid;
   state.currentChannel = null;
   state.currentServer = null;
+  state.dmChats.add(uid);
   
-  const friend = state.friends.get(oderId);
-  const name = friend?.name || 'Пользователь';
+  var f = state.friends.get(uid);
+  var n = f ? f.name : 'User';
+  var av = f ? f.avatar : null;
   
-  const dmName = $('#dm-name');
-  const dmStatus = $('#dm-status');
-  const dmInput = $('#dm-input');
-  const dmAvatar = $('#dm-avatar');
+  qS('#dm-header-name').textContent = n;
+  var dha = qS('#dm-header-avatar');
+  if (dha) {
+    if (av) dha.innerHTML = '<img src="' + av + '">';
+    else dha.textContent = n.charAt(0).toUpperCase();
+  }
+  qS('#dm-name').textContent = n;
+  var da = qS('#dm-avatar');
+  if (da) {
+    if (av) da.innerHTML = '<img src="' + av + '">';
+    else da.textContent = n.charAt(0).toUpperCase();
+  }
+  qS('#dm-input').placeholder = 'Написать @' + n;
   
-  if (dmName) dmName.textContent = name;
-  if (dmStatus) dmStatus.textContent = displayStatus(friend?.status);
-  if (dmInput) dmInput.placeholder = `Написать @${name}`;
-  if (dmAvatar) dmAvatar.textContent = name.charAt(0).toUpperCase();
+  qSA('.server-btn').forEach(function(b) { b.classList.remove('active'); });
+  qS('.home-btn').classList.add('active');
   
-  $$('.server-btn').forEach(b => b.classList.remove('active'));
-  $('.home-btn')?.classList.add('active');
+  qSA('.sidebar-view').forEach(function(v) { v.classList.remove('active'); });
+  qS('#home-view').classList.add('active');
+  qS('#members-panel').classList.remove('visible');
   
   showView('dm-view');
-  send({ type: 'get_dm_messages', oderId });
+  renderDMList();
+  
+  send({ type: 'get_dm_history', oderId: uid });
+  renderDMMessages();
 }
 
-// Voice
-function joinVoiceChannel(channelId) {
-  if (state.voiceChannel === channelId) {
+function joinVoiceChannel(id) {
+  if (state.voiceChannel === id) {
     leaveVoiceChannel();
     return;
   }
-  
   if (state.voiceChannel) leaveVoiceChannel();
   
-  state.voiceChannel = channelId;
-  send({ type: 'join_voice', channelId, serverId: state.currentServer });
-  startVoice();
+  state.voiceChannel = id;
+  send({ type: 'voice_join', channelId: id, serverId: state.currentServer });
   renderChannels();
+  
+  var srv = state.servers.get(state.currentServer);
+  var ch = srv ? srv.voiceChannels.find(function(c) { return c.id === id; }) : null;
+  qS('#voice-name').textContent = ch ? ch.name : 'Голосовой';
+  showView('voice-view');
 }
 
 function leaveVoiceChannel() {
-  send({ type: 'leave_voice', channelId: state.voiceChannel });
-  stopVoice();
+  send({ type: 'voice_leave', channelId: state.voiceChannel });
   state.voiceChannel = null;
-  state.voiceUsers.clear();
   renderChannels();
+  showView('chat-view');
 }
 
-async function startVoice() {
-  try {
-    state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    setupVoiceDetection();
-  } catch (e) {
-    console.error('Mic error:', e);
-    alert('Не удалось получить доступ к микрофону');
+
+// ============ CONTEXT MENUS ============
+function showServerContext(x, y, srv) {
+  var ctx = qS('#server-context');
+  if (!ctx) return;
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('visible');
+  ctx.dataset.serverId = srv.id;
+}
+
+function showChannelContext(x, y, channelId, isVoice) {
+  var ctx = qS('#channel-context');
+  if (!ctx) return;
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('visible');
+  ctx.dataset.channelId = channelId;
+  ctx.dataset.isVoice = isVoice ? '1' : '0';
+}
+
+function showMessageContext(x, y, msgId, msgText, isOwn, msgAuthor) {
+  var ctx = qS('#message-context');
+  if (!ctx) return;
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('visible');
+  ctx.dataset.msgId = msgId;
+  ctx.dataset.msgText = msgText;
+  ctx.dataset.msgAuthor = msgAuthor || '';
+  ctx.dataset.isOwn = isOwn ? '1' : '0';
+  var delBtn = ctx.querySelector('[data-action="delete-message"]');
+  if (delBtn) delBtn.style.display = isOwn ? 'flex' : 'none';
+}
+
+function showMemberContext(x, y, memberId) {
+  // Member context menu for kick/ban/role assignment
+  var srv = state.servers.get(state.currentServer);
+  if (!srv) return;
+  
+  var isOwner = srv.ownerId === state.userId;
+  if (!isOwner && memberId !== state.userId) return;
+  
+  // Simple implementation - could be expanded
+  if (memberId !== state.userId && isOwner) {
+    if (confirm('Исключить пользователя с сервера?')) {
+      send({ type: 'kick_member', serverId: state.currentServer, memberId: memberId });
+    }
   }
 }
 
-function stopVoice() {
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(t => t.stop());
-    state.localStream = null;
-  }
-  state.peerConnections.forEach(pc => pc.close());
-  state.peerConnections.clear();
+function showReplyBar() {
+  var bar = qS('#reply-bar');
+  if (!bar || !state.replyingTo) return;
+  bar.querySelector('.reply-name').textContent = state.replyingTo.author;
+  bar.querySelector('.reply-text').textContent = state.replyingTo.text.substring(0, 50) + (state.replyingTo.text.length > 50 ? '...' : '');
+  bar.classList.add('visible');
+  qS('#msg-input').focus();
 }
 
-function setupVoiceDetection() {
-  if (!state.localStream) return;
-  
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  const source = ctx.createMediaStreamSource(state.localStream);
-  source.connect(analyser);
-  
-  analyser.fftSize = 256;
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  
-  function check() {
-    if (!state.voiceChannel) return;
+function hideReplyBar() {
+  var bar = qS('#reply-bar');
+  if (bar) bar.classList.remove('visible');
+  state.replyingTo = null;
+}
+
+// ============ AUDIO ============
+function loadAudioDevices() {
+  navigator.mediaDevices.enumerateDevices().then(function(devs) {
+    var mics = devs.filter(function(d) { return d.kind === 'audioinput'; });
+    var spks = devs.filter(function(d) { return d.kind === 'audiooutput'; });
     
-    analyser.getByteFrequencyData(data);
-    const avg = data.reduce((a, b) => a + b) / data.length;
-    const speaking = avg > 30;
-    
-    const myVoice = $(`.voice-user[data-id="${state.userId}"]`);
-    if (myVoice) myVoice.classList.toggle('speaking', speaking);
-    
-    requestAnimationFrame(check);
-  }
-  check();
-}
-
-function renderVoiceUsers() {
-  const container = $('#voice-users-mini');
-  if (!container) return;
-  
-  container.innerHTML = [...state.voiceUsers.values()].map(u => `
-    <div class="voice-user ${u.speaking ? 'speaking' : ''}" data-id="${u.id}">
-      <div class="avatar">${u.name?.charAt(0).toUpperCase() || '?'}</div>
-      <span>${escapeHtml(u.name || 'User')}</span>
-    </div>
-  `).join('');
-}
-
-function handleVoiceSignal(msg) {
-  // WebRTC signaling
-  const { from, signal } = msg;
-  
-  if (signal.type === 'offer') {
-    const pc = createPeerConnection(from);
-    pc.setRemoteDescription(new RTCSessionDescription(signal))
-      .then(() => pc.createAnswer())
-      .then(answer => pc.setLocalDescription(answer))
-      .then(() => send({ type: 'voice_signal', to: from, signal: pc.localDescription }));
-  } else if (signal.type === 'answer') {
-    const pc = state.peerConnections.get(from);
-    if (pc) pc.setRemoteDescription(new RTCSessionDescription(signal));
-  } else if (signal.candidate) {
-    const pc = state.peerConnections.get(from);
-    if (pc) pc.addIceCandidate(new RTCIceCandidate(signal));
-  }
-}
-
-function createPeerConnection(oderId) {
-  const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(t => pc.addTrack(t, state.localStream));
-  }
-  
-  pc.onicecandidate = e => {
-    if (e.candidate) send({ type: 'voice_signal', to: oderId, signal: e.candidate });
-  };
-  
-  pc.ontrack = e => {
-    const audio = new Audio();
-    audio.srcObject = e.streams[0];
-    audio.play();
-  };
-  
-  state.peerConnections.set(oderId, pc);
-  return pc;
-}
-
-function handleIncomingCall(msg) {
-  const user = state.friends.get(msg.from);
-  if (confirm(`${user?.name || 'Пользователь'} звонит вам. Принять?`)) {
-    openDM(msg.from);
-    // Accept call logic
-  }
-}
-
-
-// User Profile
-function showUserProfile(userId) {
-  state.profileUser = userId;
-  send({ type: 'get_profile', userId });
-}
-
-function showUserProfileData(user) {
-  const modal = $('#profile-modal');
-  if (!modal) return;
-  
-  const avatar = $('#profile-avatar');
-  const name = $('#profile-name');
-  const status = $('#profile-status');
-  const banner = $('#profile-banner');
-  const joined = $('#profile-joined');
-  const friendBtn = $('#profile-friend-btn');
-  const friendText = $('#profile-friend-text');
-  
-  if (avatar) avatar.textContent = user.name?.charAt(0).toUpperCase() || '?';
-  if (name) name.textContent = user.name || 'Пользователь';
-  if (status) status.textContent = displayStatus(user.status);
-  if (banner) banner.style.background = user.banner || 'linear-gradient(135deg, #5f27cd, #5f27cd88)';
-  
-  if (joined) {
-    const date = new Date(user.createdAt || Date.now());
-    joined.textContent = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) + ' г.';
-  }
-  
-  const isFriend = state.friends.has(user.id);
-  if (friendText) friendText.textContent = isFriend ? 'Удалить из друзей' : 'Добавить в друзья';
-  if (friendBtn) friendBtn.dataset.action = isFriend ? 'remove' : 'add';
-  
-  openModal('profile-modal');
-}
-
-// Server Settings
-function loadServerMembers() {
-  const server = state.servers.get(state.contextServer);
-  if (!server) return;
-  
-  const members = server.members || [];
-  const roles = server.roles || [];
-  const list = $('#members-manage-list');
-  if (!list) return;
-  
-  list.innerHTML = members.map(m => `
-    <div class="member-manage-item" data-id="${m.id}">
-      <div class="avatar">${m.avatar ? `<img src="${m.avatar}">` : m.name?.charAt(0).toUpperCase() || '?'}</div>
-      <div class="member-manage-info">
-        <div class="member-name">${escapeHtml(m.name || 'User')}</div>
-      </div>
-      <div class="member-manage-actions">
-        ${m.id !== server.ownerId && server.ownerId === state.userId ? `
-          <select class="role-select" data-member="${m.id}">
-            <option value="">Без роли</option>
-            ${roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
-          </select>
-          <button class="btn small danger kick-member-btn" data-id="${m.id}">Кик</button>
-        ` : ''}
-      </div>
-    </div>
-  `).join('') || '<div class="empty">Нет участников</div>';
-  
-  $$('.kick-member-btn').forEach(btn => {
-    btn.onclick = () => {
-      if (confirm('Удалить пользователя с сервера?')) {
-        send({ type: 'kick_member', serverId: state.contextServer, memberId: btn.dataset.id });
-      }
-    };
-  });
-}
-
-function loadServerRoles() {
-  const server = state.servers.get(state.contextServer);
-  if (!server) return;
-  
-  const roles = server.roles || [];
-  const list = $('#roles-list');
-  if (!list) return;
-  
-  list.innerHTML = roles.map(r => `
-    <div class="role-item" data-id="${r.id}">
-      <div class="role-color" style="background: ${r.color}"></div>
-      <div class="role-name">${escapeHtml(r.name)}</div>
-      <div class="role-actions">
-        <button class="delete-role-btn danger" data-id="${r.id}">Удалить</button>
-      </div>
-    </div>
-  `).join('') || '<div class="empty">Нет ролей</div>';
-  
-  $$('.delete-role-btn').forEach(btn => {
-    btn.onclick = () => {
-      send({ type: 'delete_role', serverId: state.contextServer, roleId: btn.dataset.id });
-    };
-  });
-}
-
-function applyTheme(theme) {
-  document.body.className = `theme-${theme}`;
-  $$('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
-  state.settings.theme = theme;
-}
-
-async function loadAudioDevices() {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const mics = devices.filter(d => d.kind === 'audioinput');
-    const speakers = devices.filter(d => d.kind === 'audiooutput');
-    
-    const micSelect = $('#mic-select');
-    const speakerSelect = $('#speaker-select');
-    
-    if (micSelect) {
-      micSelect.innerHTML = mics.map(d => `<option value="${d.deviceId}">${d.label || 'Микрофон'}</option>`).join('');
-      if (state.settings.micDevice) micSelect.value = state.settings.micDevice;
+    var mo = qS('#mic-select-options');
+    var mt = qS('#mic-select-trigger span');
+    if (mo && mics.length) {
+      var mh = '';
+      mics.forEach(function(mic, i) {
+        mh += '<div class="custom-select-option' + (i === 0 ? ' selected' : '') + '" data-value="' + mic.deviceId + '">' + (mic.label || 'Микрофон ' + (i + 1)) + '</div>';
+      });
+      mo.innerHTML = mh;
+      if (mt) mt.textContent = mics[0].label || 'Микрофон 1';
     }
     
-    if (speakerSelect) {
-      speakerSelect.innerHTML = speakers.map(d => `<option value="${d.deviceId}">${d.label || 'Динамик'}</option>`).join('');
-      if (state.settings.speakerDevice) speakerSelect.value = state.settings.speakerDevice;
+    var so = qS('#speaker-select-options');
+    var st = qS('#speaker-select-trigger span');
+    if (so && spks.length) {
+      var sh = '';
+      spks.forEach(function(spk, i) {
+        sh += '<div class="custom-select-option' + (i === 0 ? ' selected' : '') + '" data-value="' + spk.deviceId + '">' + (spk.label || 'Динамик ' + (i + 1)) + '</div>';
+      });
+      so.innerHTML = sh;
+      if (st) st.textContent = spks[0].label || 'Динамик 1';
     }
-  } catch (e) {
+  }).catch(function(e) {
     console.error('Audio devices error:', e);
-  }
+  });
 }
 
-// Init
-function init() {
-  // Auth handlers
-  const loginBtn = $('#login-btn');
-  if (loginBtn) {
-    loginBtn.onclick = () => {
-      const email = $('#login-email')?.value.trim();
-      const pass = $('#login-pass')?.value;
-      const authErr = $('#auth-error');
-      
-      if (!email || !pass) {
-        if (authErr) authErr.textContent = 'Заполните все поля';
-        return;
-      }
-      
-      if (!send({ type: 'login', email, password: pass })) {
-        if (authErr) authErr.textContent = 'Нет подключения к серверу';
+// ============ SIGN OUT ============
+function signOut() {
+  localStorage.removeItem('session');
+  localStorage.removeItem('lastEmail');
+  localStorage.removeItem('lastPwd');
+  
+  state.userId = null;
+  state.username = null;
+  state.userAvatar = null;
+  state.servers.clear();
+  state.friends.clear();
+  state.pendingRequests = [];
+  state.currentServer = null;
+  state.currentChannel = null;
+  state.currentDM = null;
+  state.dmMessages.clear();
+  state.dmChats.clear();
+  
+  qS('#main-app').classList.add('hidden');
+  qS('#auth-screen').classList.add('active');
+  qS('#login-box').classList.remove('hidden');
+  qS('#register-box').classList.add('hidden');
+  
+  closeModal('settings-modal');
+}
+
+
+// ============ EVENT LISTENERS ============
+document.addEventListener('DOMContentLoaded', function() {
+  // Auth
+  qS('#login-btn').onclick = function() {
+    var email = qS('#login-email').value.trim();
+    var pwd = qS('#login-pass').value;
+    if (!email || !pwd) return;
+    localStorage.setItem('lastEmail', email);
+    localStorage.setItem('lastPwd', pwd);
+    send({ type: 'login', email: email, password: pwd });
+  };
+  
+  qS('#reg-btn').onclick = function() {
+    var name = qS('#reg-name').value.trim();
+    var email = qS('#reg-email').value.trim();
+    var pwd = qS('#reg-pass').value;
+    if (!name || !email || !pwd) return;
+    localStorage.setItem('lastEmail', email);
+    localStorage.setItem('lastPwd', pwd);
+    send({ type: 'register', email: email, password: pwd, name: name });
+  };
+  
+  var guestBtn = qS('#guest-btn');
+  if (guestBtn) {
+    guestBtn.onclick = function() {
+      send({ type: 'guest_login' });
+    };
+  }
+  
+  qS('#show-register').onclick = function(e) {
+    e.preventDefault();
+    qS('#login-box').classList.add('hidden');
+    qS('#register-box').classList.remove('hidden');
+  };
+  
+  qS('#show-login').onclick = function(e) {
+    e.preventDefault();
+    qS('#register-box').classList.add('hidden');
+    qS('#login-box').classList.remove('hidden');
+  };
+  
+  // Show/hide password
+  var showLoginPass = qS('#show-login-pass');
+  if (showLoginPass) {
+    showLoginPass.onclick = function() {
+      var inp = qS('#login-pass');
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        showLoginPass.textContent = 'Скрыть';
+      } else {
+        inp.type = 'password';
+        showLoginPass.textContent = 'Показать';
       }
     };
   }
   
-  const regBtn = $('#reg-btn');
-  if (regBtn) {
-    regBtn.onclick = () => {
-      const name = $('#reg-name')?.value.trim();
-      const email = $('#reg-email')?.value.trim();
-      const pass = $('#reg-pass')?.value;
-      const authErr = $('#auth-error');
-      
-      if (!name || !email || !pass) {
-        if (authErr) authErr.textContent = 'Заполните все поля';
-        return;
-      }
-      
-      if (!send({ type: 'register', name, email, password: pass })) {
-        if (authErr) authErr.textContent = 'Нет подключения к серверу';
+  var showRegPass = qS('#show-reg-pass');
+  if (showRegPass) {
+    showRegPass.onclick = function() {
+      var inp = qS('#reg-pass');
+      if (inp.type === 'password') {
+        inp.type = 'text';
+        showRegPass.textContent = 'Скрыть';
+      } else {
+        inp.type = 'password';
+        showRegPass.textContent = 'Показать';
       }
     };
   }
-  
-  // Auth tabs
-  $$('.modal-tab').forEach(tab => {
-    tab.onclick = () => {
-      $$('.modal-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      $$('.auth-tab').forEach(f => f.classList.remove('active'));
-      $(`#auth-${tab.dataset.tab}`)?.classList.add('active');
-    };
-  });
   
   // Home button
-  const homeBtn = $('.home-btn');
-  if (homeBtn) {
-    homeBtn.onclick = () => {
-      state.currentServer = null;
-      state.currentChannel = null;
-      state.currentDM = null;
-      $$('.server-btn').forEach(b => b.classList.remove('active'));
-      homeBtn.classList.add('active');
-      showView('home-view');
-    };
-  }
+  qS('.home-btn').onclick = function() {
+    state.currentServer = null;
+    state.currentChannel = null;
+    qSA('.server-btn').forEach(function(b) { b.classList.remove('active'); });
+    qS('.home-btn').classList.add('active');
+    qSA('.sidebar-view').forEach(function(v) { v.classList.remove('active'); });
+    qS('#home-view').classList.add('active');
+    qS('#members-panel').classList.remove('visible');
+    showView('friends-view');
+  };
   
-  // Friends tabs
-  $$('.friends-tab').forEach(tab => {
-    tab.onclick = () => {
-      $$('.friends-tab').forEach(t => t.classList.remove('active'));
+  // Tabs
+  qSA('.tab').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('.tab').forEach(function(t) { t.classList.remove('active'); });
       tab.classList.add('active');
-      state.currentView = tab.dataset.view;
-      $$('.friends-list').forEach(l => l.classList.remove('active'));
-      $(`#${tab.dataset.view}-users`)?.classList.add('active');
+      qSA('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+      var content = qS('#tab-' + tab.dataset.tab);
+      if (content) content.classList.add('active');
     };
   });
-
-  
-  // Add server
-  const addServerBtn = $('#add-server-btn');
-  if (addServerBtn) {
-    addServerBtn.onclick = () => openModal('create-server-modal');
-  }
-  
-  // Create server
-  const createServerBtn = $('#create-server-btn');
-  if (createServerBtn) {
-    createServerBtn.onclick = () => {
-      const name = $('#new-server-name')?.value.trim();
-      if (!name) return;
-      send({ type: 'create_server', name });
-      $('#new-server-name').value = '';
-      closeModal('create-server-modal');
-    };
-  }
-  
-  // Join server button in sidebar
-  const joinServerBtn = $('#join-server-btn');
-  if (joinServerBtn) {
-    joinServerBtn.onclick = () => openModal('join-server-modal');
-  }
-  
-  // Use invite code
-  const useInviteBtn = $('#use-invite-btn');
-  if (useInviteBtn) {
-    useInviteBtn.onclick = () => {
-      const code = $('#invite-code')?.value.trim();
-      if (!code) return;
-      send({ type: 'join_server', code });
-      $('#invite-code').value = '';
-      closeModal('join-server-modal');
-    };
-  }
   
   // Send message
-  const msgInput = $('#msg-input');
-  if (msgInput) {
-    msgInput.onkeydown = e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        const content = msgInput.value.trim();
-        if (!content) return;
-        send({ type: 'message', channelId: state.currentChannel, content });
-        msgInput.value = '';
-      } else {
-        send({ type: 'typing', channelId: state.currentChannel });
-      }
-    };
+  qS('#msg-input').onkeypress = function(e) {
+    if (e.key === 'Enter') sendMessage();
+  };
+  qS('#send-btn').onclick = sendMessage;
+  
+  function sendMessage() {
+    var input = qS('#msg-input');
+    var text = input.value.trim();
+    if (!text || !state.currentServer || !state.currentChannel) return;
+    
+    var data = { type: 'message', serverId: state.currentServer, channel: state.currentChannel, text: text };
+    if (state.replyingTo) {
+      data.replyTo = { id: state.replyingTo.id, author: state.replyingTo.author, text: state.replyingTo.text, avatar: state.replyingTo.avatar };
+    }
+    send(data);
+    input.value = '';
+    hideReplyBar();
   }
   
   // Send DM
-  const dmInput = $('#dm-input');
-  if (dmInput) {
-    dmInput.onkeydown = e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        const content = dmInput.value.trim();
-        if (!content) return;
-        send({ type: 'dm_message', oderId: state.currentDM, content });
-        dmInput.value = '';
-      }
+  qS('#dm-input').onkeypress = function(e) {
+    if (e.key === 'Enter') sendDM();
+  };
+  qS('#dm-send-btn').onclick = sendDM;
+  
+  function sendDM() {
+    var input = qS('#dm-input');
+    var text = input.value.trim();
+    if (!text || !state.currentDM) return;
+    
+    var tempMsg = {
+      id: 'temp_' + Date.now(),
+      from: state.userId,
+      to: state.currentDM,
+      author: state.username,
+      avatar: state.userAvatar,
+      text: text,
+      time: Date.now(),
+      pending: true
     };
+    appendDMMessage(tempMsg);
+    
+    send({ type: 'dm', to: state.currentDM, text: text });
+    input.value = '';
   }
+
   
-  // Theme buttons
-  $$('.theme-btn').forEach(btn => {
-    btn.onclick = () => applyTheme(btn.dataset.theme);
-  });
+  // Create server
+  qS('#add-server-btn').onclick = function() { openModal('create-server-modal'); };
+  qS('#create-server-btn').onclick = function() {
+    var name = qS('#new-server-name').value.trim();
+    if (!name) return;
+    send({ type: 'create_server', name: name, icon: state.newServerIcon });
+    qS('#new-server-name').value = '';
+    state.newServerIcon = null;
+  };
   
-  // Settings button
-  const settingsBtn = $('#settings-btn');
-  if (settingsBtn) {
-    settingsBtn.onclick = () => openModal('settings-modal');
-  }
-  
-  // Server context menu
-  const serverCtx = $('#server-context');
-  if (serverCtx) {
-    serverCtx.querySelectorAll('button').forEach(btn => {
-      btn.onclick = () => {
-        const action = btn.dataset.action;
-        const serverId = state.contextServer;
-        
-        if (action === 'invite') {
-          send({ type: 'create_invite', serverId });
-        } else if (action === 'settings') {
-          const server = state.servers.get(serverId);
-          const editName = $('#edit-server-name');
-          const previewName = $('#preview-server-name');
-          const previewBanner = $('#preview-banner');
-          
-          if (editName) editName.value = server?.name || '';
-          if (previewName) previewName.textContent = server?.name || '';
-          
-          state.editServerIcon = server?.icon;
-          state.editServerBanner = server?.banner || '#5f27cd';
-          if (previewBanner) previewBanner.style.background = `linear-gradient(135deg, ${state.editServerBanner}, ${state.editServerBanner}88)`;
-          
-          $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
-          $('.server-settings-tab[data-panel="profile"]')?.classList.add('active');
-          $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
-          $('#panel-profile')?.classList.add('active');
-          
-          openModal('server-settings-modal');
-        } else if (action === 'leave') {
-          send({ type: 'leave_server', serverId });
-        }
-        hideContextMenu();
-      };
-    });
-  }
-  
-  // Member context menu
-  const memberCtx = $('#member-context');
-  if (memberCtx) {
-    memberCtx.querySelectorAll('button').forEach(btn => {
-      btn.onclick = () => {
-        const action = btn.dataset.action;
-        const memberId = state.contextMember;
-        
-        if (action === 'profile') {
-          showUserProfile(memberId);
-        } else if (action === 'message') {
-          openDM(memberId);
-        } else if (action === 'kick') {
-          if (confirm('Удалить пользователя с сервера?')) {
-            send({ type: 'kick_member', serverId: state.currentServer, memberId });
-          }
-        }
-        hideContextMenu();
-      };
-    });
-  }
-  
-  // Profile modal buttons
-  const profileMsgBtn = $('#profile-message-btn');
-  if (profileMsgBtn) {
-    profileMsgBtn.onclick = () => {
-      if (state.profileUser) {
-        openDM(state.profileUser);
-        closeModal('profile-modal');
-      }
-    };
-  }
-  
-  const profileFriendBtn = $('#profile-friend-btn');
-  if (profileFriendBtn) {
-    profileFriendBtn.onclick = () => {
-      if (state.profileUser) {
-        const action = profileFriendBtn.dataset.action;
-        if (action === 'add') {
-          send({ type: 'friend_request', to: state.profileUser });
-        } else {
-          send({ type: 'remove_friend', oderId: state.profileUser });
-        }
-      }
-    };
-  }
-  
-  // Server settings tabs
-  $$('.server-settings-tab[data-panel]').forEach(tab => {
-    tab.onclick = () => {
-      $$('.server-settings-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      $$('.server-settings-panel').forEach(p => p.classList.remove('active'));
-      $(`#panel-${tab.dataset.panel}`)?.classList.add('active');
-      
-      if (tab.dataset.panel === 'members') loadServerMembers();
-      if (tab.dataset.panel === 'roles') loadServerRoles();
-    };
-  });
-  
-  // Save server settings
-  const saveServerBtn = $('#save-server-btn');
-  if (saveServerBtn) {
-    saveServerBtn.onclick = () => {
-      const name = $('#edit-server-name')?.value.trim();
-      if (!name) return;
-      send({ type: 'update_server', serverId: state.contextServer, name, icon: state.editServerIcon, banner: state.editServerBanner });
-    };
-  }
-  
-  // Delete server
-  const deleteServerBtn = $('#delete-server-btn');
-  if (deleteServerBtn) {
-    deleteServerBtn.onclick = () => {
-      if (confirm('Вы уверены что хотите удалить сервер? Это действие нельзя отменить.')) {
-        send({ type: 'delete_server', serverId: state.contextServer });
-        closeModal('server-settings-modal');
-      }
-    };
-  }
-  
-  // Create role
-  const createRoleBtn = $('#create-role-btn');
-  if (createRoleBtn) {
-    createRoleBtn.onclick = () => {
-      const name = $('#new-role-name')?.value.trim();
-      const color = $('#new-role-color')?.value;
-      if (!name) return;
-      send({ type: 'create_role', serverId: state.contextServer, name, color });
-      $('#new-role-name').value = '';
-    };
-  }
-  
-  // Create invite from settings
-  const createInviteBtn = $('#create-invite-btn');
-  if (createInviteBtn) {
-    createInviteBtn.onclick = () => {
-      send({ type: 'create_invite', serverId: state.contextServer });
-    };
-  }
+  // Join server
+  qS('#join-server-btn').onclick = function() { openModal('join-modal'); };
+  qS('#use-invite-btn').onclick = function() {
+    var code = qS('#invite-code').value.trim();
+    if (!code) return;
+    send({ type: 'use_invite', code: code });
+  };
   
   // Create channel
-  const addChannelBtn = $('#add-channel-btn');
-  if (addChannelBtn) {
-    addChannelBtn.onclick = () => {
-      state.creatingVoice = false;
-      openModal('channel-modal');
-    };
-  }
+  qS('#add-channel-btn').onclick = function() {
+    state.creatingVoice = false;
+    openModal('channel-modal');
+  };
+  qS('#add-voice-btn').onclick = function() {
+    state.creatingVoice = true;
+    openModal('channel-modal');
+  };
+  qS('#create-channel-btn').onclick = function() {
+    var name = qS('#new-channel-name').value.trim();
+    if (!name || !state.currentServer) return;
+    send({ type: 'create_channel', serverId: state.currentServer, name: name, isVoice: state.creatingVoice });
+    qS('#new-channel-name').value = '';
+  };
   
-  const addVoiceBtn = $('#add-voice-btn');
-  if (addVoiceBtn) {
-    addVoiceBtn.onclick = () => {
-      state.creatingVoice = true;
-      openModal('channel-modal');
-    };
-  }
+  // Friend request
+  qS('#search-btn').onclick = function() {
+    var name = qS('#search-input').value.trim();
+    if (!name) return;
+    send({ type: 'friend_request', name: name });
+    qS('#search-input').value = '';
+  };
   
-  const createChannelBtn = $('#create-channel-btn');
-  if (createChannelBtn) {
-    createChannelBtn.onclick = () => {
-      const name = $('#new-channel-name')?.value.trim();
-      if (!name) return;
-      send({ type: 'create_channel', serverId: state.currentServer, name, isVoice: state.creatingVoice });
-      $('#new-channel-name').value = '';
-      closeModal('channel-modal');
-    };
-  }
+  // Settings
+  qS('#settings-btn').onclick = function() {
+    openModal('settings-modal');
+    qS('#settings-name').value = state.username || '';
+    var av = qS('#settings-avatar');
+    if (av) {
+      if (state.userAvatar) av.innerHTML = '<img src="' + state.userAvatar + '">';
+      else av.textContent = state.username ? state.username.charAt(0).toUpperCase() : '?';
+    }
+  };
   
-  // Copy invite
-  const copyInviteBtn = $('#copy-invite');
-  if (copyInviteBtn) {
-    copyInviteBtn.onclick = () => {
-      const codeDisplay = $('#invite-code-display');
-      if (codeDisplay) navigator.clipboard.writeText(codeDisplay.value);
-      copyInviteBtn.textContent = 'Скопировано!';
-      setTimeout(() => copyInviteBtn.textContent = 'Копировать', 2000);
+  qS('#save-profile').onclick = function() {
+    var name = qS('#settings-name').value.trim();
+    if (name) send({ type: 'update_profile', name: name });
+  };
+  
+  qS('#signout-btn').onclick = signOut;
+  
+  // Settings tabs
+  qSA('.settings-tab').forEach(function(tab) {
+    tab.onclick = function() {
+      var settingsType = tab.dataset.settings;
+      if (!settingsType) return;
+      qSA('.settings-tab[data-settings]').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('#settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#settings-' + settingsType);
+      if (panel) panel.classList.add('active');
     };
-  }
+  });
   
   // Close modals
-  $$('[data-close]').forEach(btn => {
-    btn.onclick = () => {
-      const modal = btn.closest('.modal');
+  qSA('[data-close]').forEach(function(btn) {
+    btn.onclick = function() {
+      var modal = btn.closest('.modal');
       if (modal) modal.classList.remove('active');
     };
   });
   
-  // Search/add friend
-  const searchBtn = $('#search-btn');
-  if (searchBtn) {
-    searchBtn.onclick = () => {
-      const name = $('#search-input')?.value.trim();
-      if (!name) return;
-      send({ type: 'friend_request', name });
-      $('#search-input').value = '';
-      const results = $('#search-results');
-      if (results) results.innerHTML = '<div class="empty">Запрос отправлен!</div>';
+  // Hide context menu on click
+  document.onclick = function() { hideContextMenu(); };
+  
+  // Reply close
+  qS('#reply-close').onclick = hideReplyBar;
+  
+  // Server context menu
+  var serverCtx = qS('#server-context');
+  if (serverCtx) {
+    serverCtx.querySelector('[data-action="invite"]').onclick = function() {
+      send({ type: 'create_invite', serverId: serverCtx.dataset.serverId });
+    };
+    serverCtx.querySelector('[data-action="settings"]').onclick = function() {
+      state.editingServerId = serverCtx.dataset.serverId;
+      var srv = state.servers.get(state.editingServerId);
+      if (srv) {
+        qS('#edit-server-name').value = srv.name;
+        var icon = qS('#edit-server-icon');
+        if (srv.icon) icon.innerHTML = '<img src="' + srv.icon + '">';
+        else icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      }
+      openModal('server-settings-modal');
+      send({ type: 'get_server_members', serverId: state.editingServerId });
+    };
+    serverCtx.querySelector('[data-action="leave"]').onclick = function() {
+      if (confirm('Покинуть сервер?')) {
+        send({ type: 'leave_server', serverId: serverCtx.dataset.serverId });
+      }
+    };
+  }
+
+  
+  // Channel context menu
+  var channelCtx = qS('#channel-context');
+  if (channelCtx) {
+    var editChBtn = channelCtx.querySelector('[data-action="edit-channel"]');
+    if (editChBtn) {
+      editChBtn.onclick = function() {
+        state.editingChannelId = channelCtx.dataset.channelId;
+        var srv = state.servers.get(state.currentServer);
+        if (srv) {
+          var isVoice = channelCtx.dataset.isVoice === '1';
+          var channels = isVoice ? srv.voiceChannels : srv.channels;
+          var ch = channels.find(function(c) { return c.id === state.editingChannelId; });
+          if (ch) {
+            qS('#edit-channel-name').value = ch.name;
+            openModal('edit-channel-modal');
+          }
+        }
+      };
+    }
+    
+    var delChBtn = channelCtx.querySelector('[data-action="delete-channel"]');
+    if (delChBtn) {
+      delChBtn.onclick = function() {
+        var srv = state.servers.get(state.currentServer);
+        if (srv) {
+          var isVoice = channelCtx.dataset.isVoice === '1';
+          var channels = isVoice ? srv.voiceChannels : srv.channels;
+          var ch = channels.find(function(c) { return c.id === channelCtx.dataset.channelId; });
+          if (ch) {
+            qS('#delete-channel-name').textContent = ch.name;
+            state.editingChannelId = channelCtx.dataset.channelId;
+            openModal('confirm-delete-channel-modal');
+          }
+        }
+      };
+    }
+  }
+  
+  // Confirm delete channel
+  var confirmDelChBtn = qS('#confirm-delete-channel-btn');
+  if (confirmDelChBtn) {
+    confirmDelChBtn.onclick = function() {
+      var channelCtx = qS('#channel-context');
+      send({
+        type: 'delete_channel',
+        serverId: state.currentServer,
+        channelId: state.editingChannelId,
+        isVoice: channelCtx?.dataset.isVoice === '1'
+      });
+      closeModal('confirm-delete-channel-modal');
     };
   }
   
-  // Hide context menus on click outside
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.context-menu')) hideContextMenu();
+  // Save channel settings
+  var saveChBtn = qS('#save-channel-settings');
+  if (saveChBtn) {
+    saveChBtn.onclick = function() {
+      var name = qS('#edit-channel-name').value.trim();
+      if (name && state.editingChannelId) {
+        var channelCtx = qS('#channel-context');
+        send({
+          type: 'update_channel',
+          serverId: state.currentServer,
+          channelId: state.editingChannelId,
+          name: name,
+          isVoice: channelCtx?.dataset.isVoice === '1'
+        });
+        closeModal('edit-channel-modal');
+      }
+    };
+  }
+  
+  // Message context menu
+  var msgCtx = qS('#message-context');
+  if (msgCtx) {
+    msgCtx.querySelector('[data-action="reply"]').onclick = function() {
+      state.replyingTo = {
+        id: msgCtx.dataset.msgId,
+        author: msgCtx.dataset.msgAuthor,
+        text: msgCtx.dataset.msgText
+      };
+      showReplyBar();
+    };
+    msgCtx.querySelector('[data-action="copy-text"]').onclick = function() {
+      navigator.clipboard.writeText(msgCtx.dataset.msgText);
+      showNotification('Текст скопирован');
+    };
+    msgCtx.querySelector('[data-action="delete-message"]').onclick = function() {
+      send({
+        type: 'delete_message',
+        serverId: state.currentServer,
+        channelId: state.currentChannel,
+        messageId: msgCtx.dataset.msgId
+      });
+    };
+    
+    var forwardBtn = msgCtx.querySelector('[data-action="forward"]');
+    if (forwardBtn) {
+      forwardBtn.onclick = function() {
+        state.forwardingMessage = {
+          id: msgCtx.dataset.msgId,
+          text: msgCtx.dataset.msgText,
+          author: msgCtx.dataset.msgAuthor
+        };
+        openForwardModal();
+      };
+    }
+  }
+  
+  function openForwardModal() {
+    var list = qS('#forward-list');
+    var preview = qS('#forward-msg-preview');
+    if (!list || !state.forwardingMessage) return;
+    
+    if (preview) {
+      preview.textContent = state.forwardingMessage.text.substring(0, 100);
+    }
+    
+    var h = '';
+    // Add DM chats
+    state.friends.forEach(function(f) {
+      h += '<div class="forward-item" data-type="dm" data-id="' + f.id + '">' +
+        '<div class="avatar">' + (f.avatar ? '<img src="' + f.avatar + '">' : f.name.charAt(0).toUpperCase()) + '</div>' +
+        '<span>' + escapeHtml(f.name) + '</span></div>';
+    });
+    // Add server channels
+    state.servers.forEach(function(srv) {
+      srv.channels.forEach(function(ch) {
+        h += '<div class="forward-item" data-type="channel" data-id="' + srv.id + ':' + ch.id + '">' +
+          '<span class="channel-icon">#</span>' +
+          '<span>' + escapeHtml(srv.name) + ' / ' + escapeHtml(ch.name) + '</span></div>';
+      });
+    });
+    
+    list.innerHTML = h;
+    
+    list.querySelectorAll('.forward-item').forEach(function(item) {
+      item.onclick = function() {
+        send({
+          type: 'forward_message',
+          messageId: state.forwardingMessage.id,
+          targetType: item.dataset.type,
+          targetId: item.dataset.id,
+          originalServerId: state.currentServer,
+          originalChannelId: state.currentChannel
+        });
+        closeModal('forward-modal');
+        showNotification('Сообщение переслано');
+      };
+    });
+    
+    openModal('forward-modal');
+  }
+
+  
+  // Server settings
+  qS('#save-server-settings').onclick = function() {
+    var name = qS('#edit-server-name').value.trim();
+    if (name && state.editingServerId) {
+      send({ type: 'update_server', serverId: state.editingServerId, name: name, icon: state.editServerIcon });
+    }
+  };
+  
+  qS('#delete-server-btn').onclick = function() {
+    var srv = state.servers.get(state.editingServerId);
+    if (srv) {
+      qS('#delete-server-name').textContent = srv.name;
+      openModal('confirm-delete-modal');
+    }
+  };
+  
+  qS('#confirm-server-name').oninput = function() {
+    var srv = state.servers.get(state.editingServerId);
+    var btn = qS('#confirm-delete-btn');
+    btn.disabled = qS('#confirm-server-name').value !== srv?.name;
+  };
+  
+  qS('#confirm-delete-btn').onclick = function() {
+    send({ type: 'delete_server', serverId: state.editingServerId });
+    closeModal('confirm-delete-modal');
+    closeModal('server-settings-modal');
+  };
+  
+  // Copy invite
+  qS('#copy-invite').onclick = function() {
+    var code = qS('#invite-code-display').value;
+    navigator.clipboard.writeText(code);
+    showNotification('Код скопирован');
+  };
+  
+  // Voice controls
+  qS('#voice-leave').onclick = leaveVoiceChannel;
+  
+  var voiceMicBtn = qS('#voice-mic');
+  if (voiceMicBtn) {
+    voiceMicBtn.onclick = function() {
+      voiceMicBtn.classList.toggle('muted');
+      send({ type: 'voice_mute', muted: voiceMicBtn.classList.contains('muted') });
+    };
+  }
+  
+  // Server settings tabs
+  qSA('[data-server-settings]').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('[data-server-settings]').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('#server-settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#server-settings-' + tab.dataset.serverSettings);
+      if (panel) panel.classList.add('active');
+    };
   });
   
-  // Connect and show auth
-  connect();
-  openModal('auth-modal');
-}
+  // Channel settings tabs
+  qSA('[data-channel-settings]').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('[data-channel-settings]').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('#edit-channel-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#channel-settings-' + tab.dataset.channelSettings);
+      if (panel) panel.classList.add('active');
+    };
+  });
+  
+  // Delete channel from settings
+  var delChFromSettings = qS('#delete-channel-from-settings');
+  if (delChFromSettings) {
+    delChFromSettings.onclick = function() {
+      var srv = state.servers.get(state.currentServer);
+      if (srv && state.editingChannelId) {
+        var ch = srv.channels.find(function(c) { return c.id === state.editingChannelId; }) ||
+                 srv.voiceChannels.find(function(c) { return c.id === state.editingChannelId; });
+        if (ch) {
+          qS('#delete-channel-name').textContent = ch.name;
+          openModal('confirm-delete-channel-modal');
+        }
+      }
+    };
+  }
+  
+  // Avatar upload
+  qS('#upload-avatar').onclick = function() { qS('#avatar-input').click(); };
+  qS('#avatar-input').onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var avatar = ev.target.result;
+      qS('#settings-avatar').innerHTML = '<img src="' + avatar + '">';
+      send({ type: 'update_profile', avatar: avatar });
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  qS('#remove-avatar').onclick = function() {
+    qS('#settings-avatar').innerHTML = state.username ? state.username.charAt(0).toUpperCase() : '?';
+    send({ type: 'update_profile', avatar: null });
+  };
+  
+  // Server icon upload
+  qS('#upload-server-icon').onclick = function() { qS('#server-icon-input').click(); };
+  qS('#server-icon-input').onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      state.newServerIcon = ev.target.result;
+      qS('#new-server-icon').innerHTML = '<img src="' + state.newServerIcon + '">';
+    };
+    reader.readAsDataURL(file);
+  };
+  
+  qS('#change-server-icon').onclick = function() { qS('#edit-server-icon-input').click(); };
+  qS('#edit-server-icon-input').onchange = function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      state.editServerIcon = ev.target.result;
+      qS('#edit-server-icon').innerHTML = '<img src="' + state.editServerIcon + '">';
+    };
+    reader.readAsDataURL(file);
+  };
 
-document.addEventListener('DOMContentLoaded', init);
+  
+  // Custom select dropdowns
+  qSA('.custom-select-trigger').forEach(function(trigger) {
+    trigger.onclick = function(e) {
+      e.stopPropagation();
+      var wrapper = trigger.closest('.custom-select');
+      wrapper.classList.toggle('open');
+    };
+  });
+  
+  qSA('.custom-select-options').forEach(function(options) {
+    options.onclick = function(e) {
+      if (e.target.classList.contains('custom-select-option')) {
+        var wrapper = options.closest('.custom-select');
+        var trigger = wrapper.querySelector('.custom-select-trigger span');
+        options.querySelectorAll('.custom-select-option').forEach(function(o) { o.classList.remove('selected'); });
+        e.target.classList.add('selected');
+        trigger.textContent = e.target.textContent;
+        wrapper.classList.remove('open');
+      }
+    };
+  });
+  
+  // File attachments
+  var attachBtn = qS('#attach-btn');
+  var fileInput = qS('#file-input');
+  if (attachBtn && fileInput) {
+    attachBtn.onclick = function() { fileInput.click(); };
+    fileInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var attachment = {
+          type: file.type.startsWith('image/') ? 'image' : 'file',
+          url: ev.target.result,
+          name: file.name
+        };
+        
+        var text = qS('#msg-input').value.trim() || '';
+        var data = {
+          type: 'message',
+          serverId: state.currentServer,
+          channel: state.currentChannel,
+          text: text,
+          attachments: [attachment]
+        };
+        send(data);
+        qS('#msg-input').value = '';
+        fileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  
+  // DM file attachments
+  var dmAttachBtn = qS('#dm-attach-btn');
+  var dmFileInput = qS('#dm-file-input');
+  if (dmAttachBtn && dmFileInput) {
+    dmAttachBtn.onclick = function() { dmFileInput.click(); };
+    dmFileInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var attachment = {
+          type: file.type.startsWith('image/') ? 'image' : 'file',
+          url: ev.target.result,
+          name: file.name
+        };
+        
+        var text = qS('#dm-input').value.trim() || '';
+        send({
+          type: 'dm',
+          to: state.currentDM,
+          text: text,
+          attachments: [attachment]
+        });
+        qS('#dm-input').value = '';
+        dmFileInput.value = '';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  
+  // Mic test
+  var micTestBtn = qS('#mic-test-btn');
+  var micTestStream = null;
+  var micTestContext = null;
+  
+  if (micTestBtn) {
+    micTestBtn.onclick = function() {
+      if (micTestStream) {
+        micTestStream.getTracks().forEach(function(t) { t.stop(); });
+        micTestStream = null;
+        if (micTestContext) micTestContext.close();
+        micTestContext = null;
+        micTestBtn.querySelector('span').textContent = 'Проверить микрофон';
+        qS('#mic-level-bar').style.width = '0%';
+        return;
+      }
+      
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        micTestStream = stream;
+        micTestBtn.querySelector('span').textContent = 'Остановить';
+        
+        micTestContext = new AudioContext();
+        var analyser = micTestContext.createAnalyser();
+        var source = micTestContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        
+        var dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        function updateLevel() {
+          if (!micTestStream) return;
+          analyser.getByteFrequencyData(dataArray);
+          var avg = dataArray.reduce(function(a, b) { return a + b; }, 0) / dataArray.length;
+          qS('#mic-level-bar').style.width = Math.min(100, avg * 2) + '%';
+          requestAnimationFrame(updateLevel);
+        }
+        updateLevel();
+      }).catch(function(e) {
+        console.error('Mic test error:', e);
+        showNotification('Не удалось получить доступ к микрофону');
+      });
+    };
+  }
+  
+  // Emoji reactions (quick add)
+  document.addEventListener('dblclick', function(e) {
+    var msg = e.target.closest('.message');
+    if (msg && state.currentServer && state.currentChannel) {
+      send({
+        type: 'add_reaction',
+        serverId: state.currentServer,
+        channelId: state.currentChannel,
+        messageId: msg.dataset.id,
+        emoji: '👍'
+      });
+    }
+  });
+  
+  // Connect
+  connect();
+});
