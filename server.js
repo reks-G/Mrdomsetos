@@ -25,7 +25,7 @@ if (DATABASE_URL) {
 async function initDB() {
   if (!pool) return;
   try {
-    await pool.query(\`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS accounts (
         email VARCHAR(255) PRIMARY KEY,
         data JSONB NOT NULL
@@ -42,7 +42,7 @@ async function initDB() {
         id VARCHAR(255) PRIMARY KEY,
         data JSONB NOT NULL
       );
-    \`);
+    `);
     console.log('Database tables initialized');
     await loadFromDB();
   } catch (e) {
