@@ -26,6 +26,8 @@ var state = {
   voiceUsers: new Map(),
   localStream: null,
   noiseSuppressionEnabled: true,
+  videoEnabled: false,
+  screenSharing: false,
   replyingTo: null,
   editingMessage: null,
   newServerIcon: null,
@@ -1568,6 +1570,43 @@ function toggleMute() {
   return false;
 }
 
+function toggleScreenShare() {
+  if (state.screenSharing) {
+    // Stop screen sharing
+    state.screenSharing = false;
+    var voiceScreenBtn = qS('#voice-screen');
+    if (voiceScreenBtn) voiceScreenBtn.classList.remove('active');
+    send({ type: 'voice_screen', screen: false });
+    showNotification('Демонстрация экрана остановлена');
+  } else {
+    // Start screen sharing
+    if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        .then(function(screenStream) {
+          state.screenSharing = true;
+          var voiceScreenBtn = qS('#voice-screen');
+          if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
+          send({ type: 'voice_screen', screen: true });
+          showNotification('Демонстрация экрана запущена');
+          
+          // Stop sharing when user stops from browser
+          screenStream.getVideoTracks()[0].onended = function() {
+            state.screenSharing = false;
+            if (voiceScreenBtn) voiceScreenBtn.classList.remove('active');
+            send({ type: 'voice_screen', screen: false });
+            showNotification('Демонстрация экрана остановлена');
+          };
+        })
+        .catch(function(err) {
+          console.error('Screen share error:', err);
+          showNotification('Не удалось запустить демонстрацию экрана');
+        });
+    } else {
+      showNotification('Демонстрация экрана не поддерживается');
+    }
+  }
+}
+
 // Noise suppression
 function applyNoiseSuppression(stream) {
   var audioTrack = stream.getAudioTracks()[0];
@@ -2225,6 +2264,25 @@ document.addEventListener('DOMContentLoaded', function() {
     voiceMicBtn.onclick = function() {
       var muted = toggleMute();
       voiceMicBtn.classList.toggle('muted', muted);
+    };
+  }
+  
+  // Video toggle
+  var voiceVideoBtn = qS('#voice-video');
+  if (voiceVideoBtn) {
+    voiceVideoBtn.onclick = function() {
+      state.videoEnabled = !state.videoEnabled;
+      voiceVideoBtn.classList.toggle('active', state.videoEnabled);
+      send({ type: 'voice_video', video: state.videoEnabled });
+      showNotification(state.videoEnabled ? 'Видео включено' : 'Видео выключено');
+    };
+  }
+  
+  // Screen share toggle
+  var voiceScreenBtn = qS('#voice-screen');
+  if (voiceScreenBtn) {
+    voiceScreenBtn.onclick = function() {
+      toggleScreenShare();
     };
   }
   

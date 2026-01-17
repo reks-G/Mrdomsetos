@@ -754,21 +754,26 @@ body::before {
 .voice-tool-btn.dropdown { width: 24px; padding: 0; }
 .voice-tool-btn.dropdown svg { width: 14px; height: 14px; }
 .voice-leave-btn {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border: none;
-  border-radius: 50%;
-  background: var(--danger);
-  color: white;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
   margin-left: 8px;
+  border: 1px solid var(--border);
 }
-.voice-leave-btn svg { width: 24px; height: 24px; }
-.voice-leave-btn:hover { background: #dc2626; transform: scale(1.05); }
+.voice-leave-btn svg { width: 20px; height: 20px; }
+.voice-leave-btn:hover { 
+  background: var(--danger); 
+  color: white;
+  border-color: var(--danger);
+}
 
 /* Voice Dropdown */
 .voice-dropdown {
