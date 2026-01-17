@@ -1746,6 +1746,17 @@ function signOut() {
 
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
+  // Window controls (Electron)
+  if (window.electronAPI) {
+    var minBtn = qS('#minimize-btn');
+    var maxBtn = qS('#maximize-btn');
+    var closeBtn = qS('#close-btn');
+    
+    if (minBtn) minBtn.onclick = function() { window.electronAPI.minimize(); };
+    if (maxBtn) maxBtn.onclick = function() { window.electronAPI.maximize(); };
+    if (closeBtn) closeBtn.onclick = function() { window.electronAPI.close(); };
+  }
+  
   // Auth
   qS('#login-btn').onclick = function() {
     var email = qS('#login-email').value.trim();

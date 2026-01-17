@@ -3,7 +3,6 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
 
 // ============ DATABASE ============
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -11,13 +10,18 @@ let pool = null;
 let useDB = false;
 
 if (DATABASE_URL) {
-  pool = new Pool({
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
-  useDB = true;
-  console.log('Using PostgreSQL database');
-  initDB();
+  try {
+    const { Pool } = require('pg');
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+    useDB = true;
+    console.log('Using PostgreSQL database');
+    initDB();
+  } catch (e) {
+    console.log('PostgreSQL not available, using JSON files');
+  }
 } else {
   console.log('No DATABASE_URL, using JSON files');
 }
