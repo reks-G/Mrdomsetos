@@ -25,6 +25,7 @@ var state = {
   voiceChannel: null,
   voiceUsers: new Map(),
   localStream: null,
+  screenStream: null,
   noiseSuppressionEnabled: true,
   videoEnabled: false,
   screenSharing: false,
@@ -1429,46 +1430,108 @@ function createPeerConnection(oderId) {
   var pc = new RTCPeerConnection(rtcConfig);
   peerConnections.set(oderId, pc);
   
-  // Add local stream tracks
+  // Add local stream tracks (audio)
   if (localStream) {
     localStream.getTracks().forEach(function(track) {
       pc.addTrack(track, localStream);
     });
   }
   
+  // Add screen share track if active
+  if (state.screenStream) {
+    state.screenStream.getTracks().forEach(function(track) {
+      pc.addTrack(track, state.screenStream);
+      console.log('Added screen track to new peer:', oderId);
+    });
+  }
+  
   // Handle incoming tracks
   pc.ontrack = function(event) {
-    console.log('Received remote track from:', oderId);
+    console.log('Received remote track from:', oderId, 'kind:', event.track.kind);
     
-    // Remove existing audio element if any
-    var existingAudio = document.getElementById('audio-' + oderId);
-    if (existingAudio) existingAudio.remove();
-    
-    var audio = document.createElement('audio');
-    audio.id = 'audio-' + oderId;
-    audio.srcObject = event.streams[0];
-    audio.autoplay = true;
-    audio.playsInline = true;
-    audio.volume = 1.0;
-    document.body.appendChild(audio);
-    
-    // Force play with user interaction workaround
-    var playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.then(function() {
-        console.log('Audio playing for:', oderId);
-      }).catch(function(err) {
-        console.error('Audio play error:', err);
-        // Try to play on next user interaction
-        document.addEventListener('click', function playOnClick() {
-          audio.play();
-          document.removeEventListener('click', playOnClick);
-        }, { once: true });
+    if (event.track.kind === 'audio') {
+      // Remove existing audio element if any
+      var existingAudio = document.getElementById('audio-' + oderId);
+      if (existingAudio) existingAudio.remove();
+      
+      var audio = document.createElement('audio');
+      audio.id = 'audio-' + oderId;
+      audio.srcObject = event.streams[0];
+      audio.autoplay = true;
+      audio.playsInline = true;
+      audio.volume = 1.0;
+      document.body.appendChild(audio);
+      
+      // Force play with user interaction workaround
+      var playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.then(function() {
+          console.log('Audio playing for:', oderId);
+        }).catch(function(err) {
+          console.error('Audio play error:', err);
+          // Try to play on next user interaction
+          document.addEventListener('click', function playOnClick() {
+            audio.play();
+            document.removeEventListener('click', playOnClick);
+          }, { once: true });
+        });
+      }
+      
+      // Setup audio analyser for remote user speaking detection
+      setupAudioAnalyser(event.streams[0], oderId);
+    } else if (event.track.kind === 'video') {
+      // Handle video track (screen share)
+      console.log('Received video track from:', oderId);
+      
+      // Remove existing video element if any
+      var existingVideo = document.getElementById('video-' + oderId);
+      if (existingVideo) existingVideo.remove();
+      
+      // Create video element
+      var video = document.createElement('video');
+      video.id = 'video-' + oderId;
+      video.srcObject = event.streams[0];
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.position = 'fixed';
+      video.style.top = '50%';
+      video.style.left = '50%';
+      video.style.transform = 'translate(-50%, -50%)';
+      video.style.maxWidth = '90%';
+      video.style.maxHeight = '90%';
+      video.style.zIndex = '1000';
+      video.style.border = '2px solid var(--accent)';
+      video.style.borderRadius = '8px';
+      video.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+      video.style.background = '#000';
+      
+      // Add close button
+      var closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '✕';
+      closeBtn.style.position = 'fixed';
+      closeBtn.style.top = 'calc(5% + 10px)';
+      closeBtn.style.right = 'calc(5% + 10px)';
+      closeBtn.style.zIndex = '1001';
+      closeBtn.style.width = '32px';
+      closeBtn.style.height = '32px';
+      closeBtn.style.borderRadius = '50%';
+      closeBtn.style.border = 'none';
+      closeBtn.style.background = 'var(--danger)';
+      closeBtn.style.color = 'white';
+      closeBtn.style.fontSize = '18px';
+      closeBtn.style.cursor = 'pointer';
+      closeBtn.onclick = function() {
+        video.remove();
+        closeBtn.remove();
+      };
+      
+      document.body.appendChild(video);
+      document.body.appendChild(closeBtn);
+      
+      video.play().catch(function(err) {
+        console.error('Video play error:', err);
       });
     }
-    
-    // Setup audio analyser for remote user speaking detection
-    setupAudioAnalyser(event.streams[0], oderId);
   };
   
   // Handle ICE candidates
@@ -1582,6 +1645,21 @@ function toggleMute() {
 function toggleScreenShare() {
   if (state.screenSharing) {
     // Stop screen sharing
+    if (state.screenStream) {
+      state.screenStream.getTracks().forEach(function(track) { track.stop(); });
+      state.screenStream = null;
+    }
+    
+    // Remove screen track from all peer connections
+    peerConnections.forEach(function(pc) {
+      var senders = pc.getSenders();
+      senders.forEach(function(sender) {
+        if (sender.track && sender.track.kind === 'video') {
+          pc.removeTrack(sender);
+        }
+      });
+    });
+    
     state.screenSharing = false;
     var voiceScreenBtn = qS('#voice-screen');
     if (voiceScreenBtn) voiceScreenBtn.classList.remove('active');
@@ -1590,20 +1668,33 @@ function toggleScreenShare() {
   } else {
     // Start screen sharing
     if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-      navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      navigator.mediaDevices.getDisplayMedia({ 
+        video: { 
+          cursor: 'always',
+          displaySurface: 'monitor'
+        }, 
+        audio: true 
+      })
         .then(function(screenStream) {
           state.screenSharing = true;
+          state.screenStream = screenStream;
+          
           var voiceScreenBtn = qS('#voice-screen');
           if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
+          
+          // Add screen track to all peer connections
+          var videoTrack = screenStream.getVideoTracks()[0];
+          peerConnections.forEach(function(pc, oderId) {
+            pc.addTrack(videoTrack, screenStream);
+            console.log('Added screen track to peer:', oderId);
+          });
+          
           send({ type: 'voice_screen', screen: true });
           showNotification('Демонстрация экрана запущена');
           
           // Stop sharing when user stops from browser
-          screenStream.getVideoTracks()[0].onended = function() {
-            state.screenSharing = false;
-            if (voiceScreenBtn) voiceScreenBtn.classList.remove('active');
-            send({ type: 'voice_screen', screen: false });
-            showNotification('Демонстрация экрана остановлена');
+          videoTrack.onended = function() {
+            toggleScreenShare();
           };
         })
         .catch(function(err) {
