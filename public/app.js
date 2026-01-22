@@ -1406,6 +1406,15 @@ function leaveVoiceChannel() {
   // Stop speaking detection
   stopSpeakingDetection();
   
+  // Stop screen sharing if active
+  if (state.screenSharing) {
+    if (state.screenStream) {
+      state.screenStream.getTracks().forEach(function(track) { track.stop(); });
+      state.screenStream = null;
+    }
+    state.screenSharing = false;
+  }
+  
   // Stop local stream
   if (localStream) {
     localStream.getTracks().forEach(function(track) { track.stop(); });
@@ -2381,7 +2390,15 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   
   // Voice controls
-  qS('#voice-leave').onclick = leaveVoiceChannel;
+  var voiceLeaveBtn = qS('#voice-leave');
+  if (voiceLeaveBtn) {
+    voiceLeaveBtn.onclick = function() {
+      console.log('Leave voice channel clicked');
+      leaveVoiceChannel();
+    };
+  } else {
+    console.error('Voice leave button not found');
+  }
   
   var voiceMicBtn = qS('#voice-mic');
   if (voiceMicBtn) {
