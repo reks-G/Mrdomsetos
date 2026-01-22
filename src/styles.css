@@ -635,12 +635,16 @@ body::before {
 .icon-btn:hover { background: var(--bg-glass-hover); color: var(--text-primary); border-color: var(--border-light); }
 
 /* Voice Room - Glass */
+#voice-view {
+  position: relative;
+}
 .voice-room {
   flex: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg-primary);
+  padding-bottom: 80px;
 }
 
 /* Voice Header */
@@ -719,6 +723,10 @@ body::before {
 
 /* Voice Toolbar - Discord style */
 .voice-toolbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -726,6 +734,7 @@ body::before {
   padding: 16px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
+  z-index: 10;
 }
 .voice-toolbar-group {
   display: flex;
