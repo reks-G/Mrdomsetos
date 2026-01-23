@@ -1518,10 +1518,10 @@ function createPeerConnection(oderId) {
       container.id = 'screen-share-container-' + oderId;
       container.className = 'screen-share-window';
       container.style.position = 'fixed';
-      container.style.top = '10%';
-      container.style.left = '10%';
-      container.style.width = '80%';
-      container.style.height = '80%';
+      container.style.top = '50px';
+      container.style.left = '50px';
+      container.style.width = '800px';
+      container.style.height = '600px';
       container.style.zIndex = '1000';
       container.style.background = '#000';
       container.style.border = '2px solid var(--accent)';
@@ -1600,6 +1600,8 @@ function createPeerConnection(oderId) {
       video.style.height = '100%';
       video.style.objectFit = 'contain';
       video.style.background = '#000';
+      video.style.pointerEvents = 'none';
+      video.style.flex = '1';
       
       // Create resize handle
       var resizeHandle = document.createElement('div');
@@ -1644,15 +1646,18 @@ function createPeerConnection(oderId) {
       var startY;
       
       header.addEventListener('mousedown', function(e) {
+        console.log('Header mousedown', e.target);
         if (e.target === header || e.target === title) {
           isDragging = true;
           initialX = e.clientX - container.offsetLeft;
           initialY = e.clientY - container.offsetTop;
           e.preventDefault();
+          console.log('Dragging started');
         }
       });
       
       resizeHandle.addEventListener('mousedown', function(e) {
+        console.log('Resize handle mousedown');
         isResizing = true;
         startWidth = container.offsetWidth;
         startHeight = container.offsetHeight;
@@ -1660,6 +1665,7 @@ function createPeerConnection(oderId) {
         startY = e.clientY;
         e.preventDefault();
         e.stopPropagation();
+        console.log('Resizing started');
       });
       
       var handleMouseMove = function(e) {
