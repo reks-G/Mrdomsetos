@@ -904,7 +904,13 @@ function renderVoiceUsers(channelId, users) {
   var vu = qS('#voice-users');
   if (!vu || state.voiceChannel !== channelId) return;
   
-  vu.innerHTML = (users || []).map(function(u) {
+  // Save screen share if exists
+  var screenShare = qS('#local-screen-preview-container');
+  var screenShareHTML = screenShare ? screenShare.outerHTML : '';
+  var screenShareElement = screenShare;
+  
+  // Render users
+  var usersHTML = (users || []).map(function(u) {
     return '<div class="voice-user" data-user-id="' + u.id + '">' +
       '<div class="avatar" data-user-id="' + u.id + '">' + (u.avatar ? '<img src="' + u.avatar + '">' : (u.name ? u.name.charAt(0).toUpperCase() : '?')) + '</div>' +
       '<span>' + escapeHtml(u.name) + '</span>' +
@@ -913,6 +919,17 @@ function renderVoiceUsers(channelId, users) {
       (u.screen ? '<svg class="screen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' : '') +
       '</div>';
   }).join('');
+  
+  // Set HTML
+  vu.innerHTML = usersHTML;
+  
+  // Re-add screen share at the beginning if it existed
+  if (screenShareElement && screenShareElement.parentElement) {
+    // Screen share still exists, do nothing
+  } else if (screenShareHTML) {
+    // Re-insert screen share
+    vu.insertAdjacentHTML('afterbegin', screenShareHTML);
+  }
 }
 
 function renderSearchResults() {
