@@ -59,18 +59,94 @@ function displayStatus(s) {
   return map[s] || 'В сети';
 }
 
+var authLoadingStartTime = 0;
+var pendingAuthSuccess = null;
+
 function showAuthLoading(text) {
   var loading = qS('#auth-loading');
   if (loading) {
-    loading.querySelector('p').textContent = text || 'Загрузка...';
+    var textEl = loading.querySelector('.loading-text p');
+    if (textEl) textEl.textContent = text || 'Подготавливаем всё для вас...';
     loading.classList.add('visible');
+    loading.classList.remove('fade-out');
+    
+    // Reset progress bar animation
+    var progressBar = loading.querySelector('.loading-progress-bar');
+    if (progressBar) {
+      progressBar.style.animation = 'none';
+      progressBar.offsetHeight; // Trigger reflow
+      progressBar.style.animation = 'progress-fill 5s ease-out forwards, shimmer 1.5s ease-in-out infinite';
+    }
+    
+    authLoadingStartTime = Date.now();
   }
 }
 
 function hideAuthLoading() {
   var loading = qS('#auth-loading');
   if (loading) {
-    loading.classList.remove('visible');
+    var elapsed = Date.now() - authLoadingStartTime;
+    var minTime = 5000; // 5 seconds minimum
+    var remaining = Math.max(0, minTime - elapsed);
+    
+    setTimeout(function() {
+      loading.classList.add('fade-out');
+      setTimeout(function() {
+        loading.classList.remove('visible', 'fade-out');
+        // Process pending auth success
+        if (pendingAuthSuccess) {
+          processAuthSuccess(pendingAuthSuccess);
+          pendingAuthSuccess = null;
+        }
+      }, 500);
+    }, remaining);
+  }
+}
+
+function processAuthSuccess(msg) {
+  state.userId = msg.userId;
+  state.username = msg.user.name;
+  state.userAvatar = msg.user.avatar;
+  state.userStatus = msg.user.status || 'online';
+  state.customStatus = msg.user.customStatus;
+  state.isGuest = msg.isGuest || false;
+  
+  if (msg.servers) {
+    Object.values(msg.servers).forEach(function(srv) {
+      state.servers.set(srv.id, srv);
+    });
+  }
+  
+  if (msg.friends) {
+    msg.friends.forEach(function(f) {
+      state.friends.set(f.id, f);
+      state.dmChats.add(f.id);
+    });
+  }
+  
+  if (msg.pendingRequests) {
+    state.pendingRequests = msg.pendingRequests;
+  }
+  
+  localStorage.setItem('session', JSON.stringify({ 
+    email: localStorage.getItem('lastEmail'), 
+    pwd: localStorage.getItem('lastPwd') 
+  }));
+  
+  qS('#auth-screen').classList.remove('active');
+  qS('#main-app').classList.remove('hidden');
+  
+  updateUserPanel();
+  renderServers();
+  renderFriends();
+  renderDMList();
+  loadAudioDevices();
+  
+  if (state.servers.size > 0) {
+    var firstServer = state.servers.keys().next().value;
+    selectServer(firstServer);
+  } else {
+    showFriendsView();
   }
 }
 
@@ -172,39 +248,9 @@ function handleMessage(msg) {
     pong: function() {},
     
     auth_success: function() {
+      // Store auth data and let hideAuthLoading process it after 5 seconds
+      pendingAuthSuccess = msg;
       hideAuthLoading();
-      state.userId = msg.userId;
-      state.username = msg.user.name;
-      state.userAvatar = msg.user.avatar;
-      state.userStatus = msg.user.status || 'online';
-      state.customStatus = msg.user.customStatus;
-      state.isGuest = msg.isGuest || false;
-      localStorage.setItem('session', JSON.stringify({ userId: msg.userId }));
-      
-      if (msg.servers) {
-        Object.values(msg.servers).forEach(function(srv) {
-          state.servers.set(srv.id, srv);
-        });
-      }
-      
-      if (msg.friends) {
-        msg.friends.forEach(function(f) {
-          state.friends.set(f.id, f);
-          state.dmChats.add(f.id);
-        });
-      }
-      
-      if (msg.pendingRequests) {
-        state.pendingRequests = msg.pendingRequests;
-      }
-      
-      qS('#auth-screen').classList.remove('active');
-      qS('#main-app').classList.remove('hidden');
-      updateUserPanel();
-      renderServers();
-      renderFriends();
-      renderDMList();
-      loadAudioDevices();
     },
     
     auth_error: function() {
