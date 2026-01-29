@@ -2068,38 +2068,43 @@ function toggleScreenShare() {
 }
 
 function showScreenSourcePicker(sources, callback) {
-  // Create picker modal
+  // Create picker modal - solid background, not transparent
   var overlay = document.createElement('div');
   overlay.className = 'screen-picker-overlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#1a1a2e;z-index:10000;display:flex;align-items:center;justify-content:center;';
   
   var modal = document.createElement('div');
-  modal.style.cssText = 'background:var(--bg-secondary);border-radius:12px;padding:24px;max-width:600px;max-height:80vh;overflow-y:auto;';
+  modal.style.cssText = 'background:#2d2d44;border-radius:16px;padding:32px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
   
   var title = document.createElement('h2');
   title.textContent = 'Выберите источник для демонстрации';
-  title.style.cssText = 'color:var(--text-primary);margin:0 0 20px 0;font-size:20px;';
+  title.style.cssText = 'color:#fff;margin:0 0 8px 0;font-size:24px;font-weight:600;';
   modal.appendChild(title);
   
+  var subtitle = document.createElement('p');
+  subtitle.textContent = 'Выберите экран или окно которое хотите показать';
+  subtitle.style.cssText = 'color:#a0a0a0;margin:0 0 24px 0;font-size:14px;';
+  modal.appendChild(subtitle);
+  
   var grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;';
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;';
   
   sources.forEach(function(source) {
     var item = document.createElement('div');
-    item.style.cssText = 'background:var(--bg-tertiary);border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;';
-    item.onmouseenter = function() { item.style.borderColor = 'var(--accent)'; };
-    item.onmouseleave = function() { item.style.borderColor = 'transparent'; };
+    item.style.cssText = 'background:#3d3d5c;border-radius:12px;padding:12px;cursor:pointer;transition:all 0.2s;border:3px solid transparent;';
+    item.onmouseenter = function() { item.style.borderColor = '#7289da'; item.style.transform = 'scale(1.02)'; };
+    item.onmouseleave = function() { item.style.borderColor = 'transparent'; item.style.transform = 'scale(1)'; };
     
     if (source.thumbnail) {
       var thumb = document.createElement('img');
       thumb.src = source.thumbnail.toDataURL();
-      thumb.style.cssText = 'width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:8px;';
+      thumb.style.cssText = 'width:100%;height:100px;object-fit:cover;border-radius:8px;margin-bottom:10px;background:#1a1a2e;';
       item.appendChild(thumb);
     }
     
     var name = document.createElement('div');
-    name.textContent = source.name.length > 20 ? source.name.substring(0, 20) + '...' : source.name;
-    name.style.cssText = 'color:var(--text-primary);font-size:12px;text-align:center;';
+    name.textContent = source.name.length > 25 ? source.name.substring(0, 25) + '...' : source.name;
+    name.style.cssText = 'color:#fff;font-size:13px;text-align:center;font-weight:500;';
     item.appendChild(name);
     
     item.onclick = function() {
@@ -2114,7 +2119,9 @@ function showScreenSourcePicker(sources, callback) {
   
   var cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'Отмена';
-  cancelBtn.style.cssText = 'margin-top:20px;padding:10px 24px;background:var(--bg-tertiary);color:var(--text-primary);border:none;border-radius:6px;cursor:pointer;width:100%;';
+  cancelBtn.style.cssText = 'margin-top:24px;padding:12px 32px;background:#4d4d6d;color:#fff;border:none;border-radius:8px;cursor:pointer;width:100%;font-size:15px;font-weight:500;transition:background 0.2s;';
+  cancelBtn.onmouseenter = function() { cancelBtn.style.background = '#5d5d7d'; };
+  cancelBtn.onmouseleave = function() { cancelBtn.style.background = '#4d4d6d'; };
   cancelBtn.onclick = function() {
     document.body.removeChild(overlay);
     callback(null);
@@ -2122,12 +2129,6 @@ function showScreenSourcePicker(sources, callback) {
   modal.appendChild(cancelBtn);
   
   overlay.appendChild(modal);
-  overlay.onclick = function(e) {
-    if (e.target === overlay) {
-      document.body.removeChild(overlay);
-      callback(null);
-    }
-  };
   
   document.body.appendChild(overlay);
 }
@@ -2208,29 +2209,68 @@ function showLocalScreenPreview(stream) {
   video.id = 'local-screen-preview';
   video.srcObject = stream;
   video.autoplay = true;
-  video.muted = true;
+  video.muted = true; // Local preview is muted
   video.playsInline = true;
   video.style.width = '100%';
   video.style.height = 'auto';
   video.style.display = 'block';
   video.style.background = '#000';
   
-  // Create label overlay
+  // Create controls overlay
+  var controls = document.createElement('div');
+  controls.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:12px;background:linear-gradient(transparent,rgba(0,0,0,0.9));display:flex;align-items:center;gap:12px;';
+  
+  // Label
   var label = document.createElement('div');
   label.textContent = 'Демонстрация экрана';
-  label.style.position = 'absolute';
-  label.style.bottom = '12px';
-  label.style.left = '12px';
-  label.style.background = 'rgba(0, 0, 0, 0.8)';
-  label.style.color = 'white';
-  label.style.padding = '6px 12px';
-  label.style.borderRadius = '6px';
-  label.style.fontSize = '14px';
-  label.style.fontWeight = '500';
-  label.style.backdropFilter = 'blur(10px)';
+  label.style.cssText = 'color:white;font-size:14px;font-weight:500;flex:1;';
+  controls.appendChild(label);
+  
+  // Volume control (for remote screen shares)
+  var volumeContainer = document.createElement('div');
+  volumeContainer.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  
+  var volumeIcon = document.createElement('div');
+  volumeIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+  volumeContainer.appendChild(volumeIcon);
+  
+  var volumeSlider = document.createElement('input');
+  volumeSlider.type = 'range';
+  volumeSlider.min = '0';
+  volumeSlider.max = '100';
+  volumeSlider.value = '100';
+  volumeSlider.style.cssText = 'width:80px;height:4px;cursor:pointer;accent-color:#7289da;';
+  volumeSlider.oninput = function() {
+    // This controls volume for remote screen shares
+    var remoteVideos = document.querySelectorAll('.remote-screen-video');
+    remoteVideos.forEach(function(v) {
+      v.volume = volumeSlider.value / 100;
+    });
+    // Update icon
+    if (volumeSlider.value == 0) {
+      volumeIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+    } else {
+      volumeIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+    }
+  };
+  volumeContainer.appendChild(volumeSlider);
+  controls.appendChild(volumeContainer);
+  
+  // Stop button
+  var stopBtn = document.createElement('button');
+  stopBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  stopBtn.title = 'Остановить демонстрацию';
+  stopBtn.style.cssText = 'background:#f04747;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:6px;color:white;font-size:12px;';
+  stopBtn.onmouseenter = function() { stopBtn.style.background = '#d84040'; };
+  stopBtn.onmouseleave = function() { stopBtn.style.background = '#f04747'; };
+  stopBtn.onclick = function(e) {
+    e.stopPropagation();
+    toggleScreenShare();
+  };
+  controls.appendChild(stopBtn);
   
   screenDiv.appendChild(video);
-  screenDiv.appendChild(label);
+  screenDiv.appendChild(controls);
   
   // Fullscreen functionality
   var isFullscreen = false;
@@ -2238,7 +2278,6 @@ function showLocalScreenPreview(stream) {
   
   screenDiv.ondblclick = function() {
     if (!isFullscreen) {
-      // Save current styles
       savedStyles = {
         position: screenDiv.style.position,
         width: screenDiv.style.width,
@@ -2247,7 +2286,6 @@ function showLocalScreenPreview(stream) {
         zIndex: screenDiv.style.zIndex
       };
       
-      // Go fullscreen
       screenDiv.style.position = 'fixed';
       screenDiv.style.top = '0';
       screenDiv.style.left = '0';
@@ -2258,10 +2296,9 @@ function showLocalScreenPreview(stream) {
       screenDiv.style.zIndex = '9999';
       video.style.height = '100vh';
       video.style.objectFit = 'contain';
-      label.textContent = 'Демонстрация экрана (двойной клик для выхода)';
+      label.textContent = 'Двойной клик для выхода';
       isFullscreen = true;
     } else {
-      // Restore
       screenDiv.style.position = savedStyles.position;
       screenDiv.style.top = '';
       screenDiv.style.left = '';
@@ -2277,18 +2314,15 @@ function showLocalScreenPreview(stream) {
     }
   };
   
-  // Add cursor hint
   screenDiv.style.cursor = 'pointer';
   screenDiv.title = 'Двойной клик для полноэкранного режима';
   
-  // Insert at the beginning of voice users
   if (voiceUsers.firstChild) {
     voiceUsers.insertBefore(screenDiv, voiceUsers.firstChild);
   } else {
     voiceUsers.appendChild(screenDiv);
   }
   
-  // Wait a bit to ensure video is in DOM before playing
   setTimeout(function() {
     if (document.body.contains(video)) {
       video.play().catch(function(err) {
