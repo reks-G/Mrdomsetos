@@ -84,21 +84,15 @@ function showAuthLoading(text) {
 function hideAuthLoading() {
   var loading = qS('#auth-loading');
   if (loading) {
-    var elapsed = Date.now() - authLoadingStartTime;
-    var minTime = 5000; // 5 seconds minimum
-    var remaining = Math.max(0, minTime - elapsed);
-    
+    loading.classList.add('fade-out');
     setTimeout(function() {
-      loading.classList.add('fade-out');
-      setTimeout(function() {
-        loading.classList.remove('visible', 'fade-out');
-        // Process pending auth success
-        if (pendingAuthSuccess) {
-          processAuthSuccess(pendingAuthSuccess);
-          pendingAuthSuccess = null;
-        }
-      }, 500);
-    }, remaining);
+      loading.classList.remove('visible', 'fade-out');
+      // Process pending auth success
+      if (pendingAuthSuccess) {
+        processAuthSuccess(pendingAuthSuccess);
+        pendingAuthSuccess = null;
+      }
+    }, 300);
   }
 }
 
@@ -452,9 +446,6 @@ function handleMessage(msg) {
       renderDMList();
       if (state.currentDM === senderId) {
         appendDMMessage(msg.message);
-      }
-      if (state.settings.notifications) {
-        showNotification('Новое сообщение от ' + (msg.sender?.name || 'User'));
       }
     },
     
@@ -2112,10 +2103,12 @@ function toggleScreenShare() {
       // Browser screen share
       navigator.mediaDevices.getDisplayMedia({ 
         video: { 
-          cursor: 'always',
-          displaySurface: 'monitor'
+          cursor: 'always'
         }, 
-        audio: true 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       })
         .then(function(screenStream) {
           state.screenSharing = true;
