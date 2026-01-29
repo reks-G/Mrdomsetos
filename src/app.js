@@ -59,6 +59,21 @@ function displayStatus(s) {
   return map[s] || 'В сети';
 }
 
+function showAuthLoading(text) {
+  var loading = qS('#auth-loading');
+  if (loading) {
+    loading.querySelector('p').textContent = text || 'Загрузка...';
+    loading.classList.add('visible');
+  }
+}
+
+function hideAuthLoading() {
+  var loading = qS('#auth-loading');
+  if (loading) {
+    loading.classList.remove('visible');
+  }
+}
+
 function formatTime(ts) {
   if (!ts) return '--:--';
   var d = new Date(ts);
@@ -157,6 +172,7 @@ function handleMessage(msg) {
     pong: function() {},
     
     auth_success: function() {
+      hideAuthLoading();
       state.userId = msg.userId;
       state.username = msg.user.name;
       state.userAvatar = msg.user.avatar;
@@ -192,6 +208,7 @@ function handleMessage(msg) {
     },
     
     auth_error: function() {
+      hideAuthLoading();
       localStorage.removeItem('session');
       localStorage.removeItem('lastEmail');
       localStorage.removeItem('lastPwd');
@@ -2370,18 +2387,56 @@ function showMessageContext(x, y, msgId, msgText, isOwn, msgAuthor) {
 }
 
 function showMemberContext(x, y, memberId) {
-  // Member context menu for kick/ban/role assignment
+  hideContextMenu();
+  var ctx = qS('#member-context');
+  if (!ctx) return;
+  
+  // Don't show menu for yourself
+  if (memberId === state.userId) return;
+  
   var srv = state.servers.get(state.currentServer);
-  if (!srv) return;
+  var isOwner = srv && srv.ownerId === state.userId;
+  var isMemberOwner = srv && srv.ownerId === memberId;
   
-  var isOwner = srv.ownerId === state.userId;
-  if (!isOwner && memberId !== state.userId) return;
+  // Show/hide admin buttons
+  var kickBtn = ctx.querySelector('[data-action="kick-member"]');
+  var banBtn = ctx.querySelector('[data-action="ban-member"]');
+  if (kickBtn) kickBtn.style.display = (isOwner && !isMemberOwner) ? 'flex' : 'none';
+  if (banBtn) banBtn.style.display = (isOwner && !isMemberOwner) ? 'flex' : 'none';
   
-  // Simple implementation - could be expanded
-  if (memberId !== state.userId && isOwner) {
-    if (confirm('Исключить пользователя с сервера?')) {
-      send({ type: 'kick_member', serverId: state.currentServer, memberId: memberId });
-    }
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+  ctx.classList.add('visible');
+  ctx.dataset.userId = memberId;
+  
+  // Bind actions
+  ctx.querySelector('[data-action="send-dm"]').onclick = function() {
+    hideContextMenu();
+    openDM(memberId);
+  };
+  
+  ctx.querySelector('[data-action="add-friend"]').onclick = function() {
+    hideContextMenu();
+    send({ type: 'friend_request', to: memberId });
+    showNotification('Запрос в друзья отправлен!');
+  };
+  
+  if (kickBtn) {
+    kickBtn.onclick = function() {
+      hideContextMenu();
+      if (confirm('Исключить пользователя с сервера?')) {
+        send({ type: 'kick_member', serverId: state.currentServer, memberId: memberId });
+      }
+    };
+  }
+  
+  if (banBtn) {
+    banBtn.onclick = function() {
+      hideContextMenu();
+      if (confirm('Забанить пользователя на сервере?')) {
+        send({ type: 'ban_member', serverId: state.currentServer, memberId: memberId });
+      }
+    };
   }
 }
 
@@ -2471,6 +2526,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!email || !pwd) return;
     localStorage.setItem('lastEmail', email);
     localStorage.setItem('lastPwd', pwd);
+    showAuthLoading('Входим в аккаунт...');
     send({ type: 'login', email: email, password: pwd });
   };
   
@@ -2481,12 +2537,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!name || !email || !pwd) return;
     localStorage.setItem('lastEmail', email);
     localStorage.setItem('lastPwd', pwd);
+    showAuthLoading('Создаём аккаунт...');
     send({ type: 'register', email: email, password: pwd, name: name });
   };
   
   var guestBtn = qS('#guest-btn');
   if (guestBtn) {
     guestBtn.onclick = function() {
+      showAuthLoading('Входим как гость...');
       send({ type: 'guest_login' });
     };
   }
