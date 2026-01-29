@@ -1071,9 +1071,16 @@ const handlers = {
 
   // Friends
   friend_request(ws, data) {
-    const { name } = data;
+    const { name, to } = data;
     const userId = ws.userId;
-    const target = getAccountByName(name);
+    
+    // Find target by name or by ID
+    let target;
+    if (to) {
+      target = getAccountById(to);
+    } else if (name) {
+      target = getAccountByName(name);
+    }
     
     if (!target) {
       send(ws, { type: 'friend_error', message: 'Пользователь не найден' });
@@ -1085,8 +1092,7 @@ const handlers = {
     }
     
     // Check privacy settings
-    const targetAcc = getAccountById(target.id);
-    if (targetAcc?.settings?.privacy === 'friends_only') {
+    if (target.settings?.privacy === 'friends_only') {
       send(ws, { type: 'friend_error', message: 'Пользователь не принимает заявки' });
       return;
     }
@@ -1101,6 +1107,13 @@ const handlers = {
     const myFriends = friends.get(userId) || new Set();
     if (myFriends.has(target.id)) {
       send(ws, { type: 'friend_error', message: 'Уже в друзьях' });
+      return;
+    }
+    
+    // Check if request already sent
+    const existingReqs = friendRequests.get(target.id);
+    if (existingReqs && existingReqs.has(userId)) {
+      send(ws, { type: 'friend_error', message: 'Запрос уже отправлен' });
       return;
     }
     
