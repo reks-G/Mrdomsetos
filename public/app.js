@@ -2429,6 +2429,33 @@ function showMessageContext(x, y, msgId, msgText, isOwn, msgAuthor) {
   if (delBtn) delBtn.style.display = isOwn ? 'flex' : 'none';
 }
 
+function positionContextMenu(ctx, x, y) {
+  // Get menu dimensions
+  ctx.style.visibility = 'hidden';
+  ctx.style.display = 'block';
+  var menuWidth = ctx.offsetWidth;
+  var menuHeight = ctx.offsetHeight;
+  ctx.style.display = '';
+  ctx.style.visibility = '';
+  
+  // Get viewport dimensions
+  var viewWidth = window.innerWidth;
+  var viewHeight = window.innerHeight;
+  
+  // Adjust position if menu would go off screen
+  if (x + menuWidth > viewWidth - 10) {
+    x = viewWidth - menuWidth - 10;
+  }
+  if (y + menuHeight > viewHeight - 10) {
+    y = viewHeight - menuHeight - 10;
+  }
+  if (x < 10) x = 10;
+  if (y < 10) y = 10;
+  
+  ctx.style.left = x + 'px';
+  ctx.style.top = y + 'px';
+}
+
 function showMemberContext(x, y, memberId) {
   hideContextMenu();
   var ctx = qS('#member-context');
@@ -2444,19 +2471,37 @@ function showMemberContext(x, y, memberId) {
   // Show/hide admin buttons
   var kickBtn = ctx.querySelector('[data-action="kick-member"]');
   var banBtn = ctx.querySelector('[data-action="ban-member"]');
-  if (kickBtn) kickBtn.style.display = (isOwner && !isMemberOwner) ? 'flex' : 'none';
-  if (banBtn) banBtn.style.display = (isOwner && !isMemberOwner) ? 'flex' : 'none';
+  var divider = ctx.querySelector('.divider');
+  var showAdmin = isOwner && !isMemberOwner;
+  if (kickBtn) kickBtn.style.display = showAdmin ? 'flex' : 'none';
+  if (banBtn) banBtn.style.display = showAdmin ? 'flex' : 'none';
+  if (divider) divider.style.display = showAdmin ? 'block' : 'none';
   
-  ctx.style.left = x + 'px';
-  ctx.style.top = y + 'px';
+  positionContextMenu(ctx, x, y);
   ctx.classList.add('visible');
   ctx.dataset.userId = memberId;
   
   // Bind actions
+  var viewProfileBtn = ctx.querySelector('[data-action="view-profile"]');
+  if (viewProfileBtn) {
+    viewProfileBtn.onclick = function() {
+      hideContextMenu();
+      showUserProfile(memberId);
+    };
+  }
+  
   ctx.querySelector('[data-action="send-dm"]').onclick = function() {
     hideContextMenu();
     openDM(memberId);
   };
+  
+  var voiceCallBtn = ctx.querySelector('[data-action="voice-call"]');
+  if (voiceCallBtn) {
+    voiceCallBtn.onclick = function() {
+      hideContextMenu();
+      startPrivateCall(memberId);
+    };
+  }
   
   ctx.querySelector('[data-action="add-friend"]').onclick = function() {
     hideContextMenu();
@@ -2483,13 +2528,124 @@ function showMemberContext(x, y, memberId) {
   }
 }
 
+function showUserProfile(userId) {
+  var modal = qS('#user-profile-modal');
+  if (!modal) return;
+  
+  // Get user data
+  var user = null;
+  var srv = state.servers.get(state.currentServer);
+  if (srv && srv.membersData) {
+    user = srv.membersData.find(function(m) { return m.id === userId; });
+  }
+  if (!user) {
+    user = state.friends.get(userId);
+  }
+  if (!user) {
+    user = { id: userId, name: 'Пользователь', status: 'offline' };
+  }
+  
+  // Set avatar
+  var avatarEl = qS('#profile-avatar');
+  if (avatarEl) {
+    if (user.avatar) {
+      avatarEl.innerHTML = '<img src="' + user.avatar + '">';
+    } else {
+      avatarEl.textContent = user.name ? user.name.charAt(0).toUpperCase() : '?';
+    }
+  }
+  
+  // Set status badge
+  var statusBadge = qS('#profile-status-badge');
+  if (statusBadge) {
+    statusBadge.className = 'profile-status-badge ' + (user.status || 'offline');
+  }
+  
+  // Set name
+  var nameEl = qS('#profile-name');
+  if (nameEl) nameEl.textContent = user.name || 'Пользователь';
+  
+  // Set custom status
+  var customStatusEl = qS('#profile-custom-status');
+  if (customStatusEl) {
+    customStatusEl.textContent = user.customStatus || '';
+    customStatusEl.style.display = user.customStatus ? 'block' : 'none';
+  }
+  
+  // Set status text
+  var statusTextEl = qS('#profile-status-text');
+  if (statusTextEl) {
+    var statusMap = { online: 'В сети', offline: 'Не в сети', idle: 'Неактивен', dnd: 'Не беспокоить' };
+    statusTextEl.textContent = statusMap[user.status] || 'Не в сети';
+  }
+  
+  // Set created date
+  var createdEl = qS('#profile-created');
+  if (createdEl) {
+    createdEl.textContent = user.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU') : '—';
+  }
+  
+  // Set mutual servers
+  var mutualSection = qS('#profile-mutual-section');
+  var mutualServers = qS('#profile-mutual-servers');
+  if (mutualServers && mutualSection) {
+    var mutuals = [];
+    state.servers.forEach(function(s) {
+      if (s.members && (s.members.has ? s.members.has(userId) : s.members.includes(userId))) {
+        mutuals.push(s);
+      }
+    });
+    
+    if (mutuals.length > 0) {
+      mutualSection.style.display = 'block';
+      mutualServers.innerHTML = mutuals.map(function(s) {
+        return '<div class="mutual-server"><div class="server-icon">' + (s.name ? s.name.charAt(0).toUpperCase() : '?') + '</div>' + escapeHtml(s.name) + '</div>';
+      }).join('');
+    } else {
+      mutualSection.style.display = 'none';
+    }
+  }
+  
+  // Bind action buttons
+  var dmBtn = qS('#profile-dm-btn');
+  if (dmBtn) {
+    dmBtn.onclick = function() {
+      closeModal('user-profile-modal');
+      openDM(userId);
+    };
+  }
+  
+  var callBtn = qS('#profile-call-btn');
+  if (callBtn) {
+    callBtn.onclick = function() {
+      closeModal('user-profile-modal');
+      startPrivateCall(userId);
+    };
+  }
+  
+  var friendBtn = qS('#profile-friend-btn');
+  if (friendBtn) {
+    friendBtn.onclick = function() {
+      send({ type: 'friend_request', to: userId });
+      showNotification('Запрос в друзья отправлен!');
+    };
+  }
+  
+  modal.classList.add('visible');
+}
+
+function startPrivateCall(userId) {
+  // Open DM and start voice call
+  openDM(userId);
+  showNotification('Звонок пока не реализован в ЛС');
+}
+
 function showVoiceUserContext(x, y, userId) {
   hideContextMenu();
   var ctx = qS('#voice-user-context');
   if (!ctx) return;
   
-  ctx.style.left = x + 'px';
-  ctx.style.top = y + 'px';
+  positionContextMenu(ctx, x, y);
   ctx.classList.add('visible');
   ctx.dataset.userId = userId;
   
@@ -2502,7 +2658,7 @@ function showVoiceUserContext(x, y, userId) {
   ctx.querySelector('[data-action="add-friend"]').onclick = function() {
     hideContextMenu();
     send({ type: 'friend_request', to: userId });
-    alert('Запрос в друзья отправлен!');
+    showNotification('Запрос в друзья отправлен!');
   };
 }
 
