@@ -899,7 +899,12 @@ function renderFriends() {
       b.onclick = function(e) {
         e.preventDefault();
         e.stopPropagation();
-        send({ type: 'friend_accept', from: b.dataset.id });
+        var fromId = b.dataset.id;
+        if (send({ type: 'friend_accept', from: fromId })) {
+          showNotification('Принимаем запрос...');
+        } else {
+          showNotification('Ошибка соединения');
+        }
       };
     });
     

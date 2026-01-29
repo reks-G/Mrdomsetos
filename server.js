@@ -1132,16 +1132,39 @@ const handlers = {
   friend_accept(ws, data) {
     const { from } = data;
     const userId = ws.userId;
-    const reqs = friendRequests.get(userId);
-    if (!reqs || !reqs.has(from)) return;
+    console.log('friend_accept:', userId, 'accepting', from);
     
-    reqs.delete(from);
+    const reqs = friendRequests.get(userId);
+    console.log('pending requests for', userId, ':', reqs ? [...reqs] : 'none');
+    
+    if (!reqs || !reqs.has(from)) {
+      console.log('Request not found, checking all requests...');
+      // Try to find the request
+      let found = false;
+      if (reqs) {
+        for (const reqId of reqs) {
+          if (reqId === from || String(reqId) === String(from)) {
+            found = true;
+            reqs.delete(reqId);
+            break;
+          }
+        }
+      }
+      if (!found) {
+        send(ws, { type: 'friend_error', message: 'Запрос не найден' });
+        return;
+      }
+    } else {
+      reqs.delete(from);
+    }
+    
     if (!friends.has(userId)) friends.set(userId, new Set());
     if (!friends.has(from)) friends.set(from, new Set());
     friends.get(userId).add(from);
     friends.get(from).add(userId);
     saveAll();
     
+    console.log('Friend added:', userId, '<->', from);
     send(ws, { type: 'friend_added', user: getUserData(from) });
     sendToUser(from, { type: 'friend_added', user: getUserData(userId) });
   },
