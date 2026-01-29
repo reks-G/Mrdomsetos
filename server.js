@@ -788,6 +788,7 @@ const handlers = {
 
   create_server(ws, data) {
     const userId = ws.userId;
+    console.log('Creating server for user:', userId);
     const serverId = genId('server');
     const srv = {
       id: serverId,
@@ -1499,8 +1500,15 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw);
+      if (data.type !== 'ping') {
+        console.log('WS message:', data.type, 'from:', ws.userId);
+      }
       const handler = handlers[data.type];
-      if (handler) handler(ws, data);
+      if (handler) {
+        handler(ws, data);
+      } else {
+        console.log('Unknown handler:', data.type);
+      }
     } catch (e) {
       console.error('Message error:', e.message);
     }
