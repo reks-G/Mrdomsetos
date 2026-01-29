@@ -2001,99 +2001,41 @@ function toggleScreenShare() {
     // Start screen sharing
     // Check if running in Electron
     if (window.electronAPI && window.electronAPI.getScreenSources) {
-      // Electron screen share
+      // Electron screen share - show source picker
       window.electronAPI.getScreenSources().then(function(sources) {
         if (sources.length === 0) {
           showNotification('Нет доступных источников для демонстрации');
           return;
         }
         
-        // Use first screen source (can be improved with selection dialog)
-        var source = sources[0];
+        // Filter out MrDomestos window
+        var filteredSources = sources.filter(function(s) {
+          return !s.name.includes('MrDomestos') && !s.name.includes('mrdomestos');
+        });
         
-        // Get video stream
-        navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: source.id
-            }
-          }
-        }).then(function(videoStream) {
-          // Try to get system audio (may not work on all systems)
-          navigator.mediaDevices.getUserMedia({
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop'
-              }
-            },
-            video: false
-          }).then(function(audioStream) {
-            // Combine video and audio streams
-            var combinedStream = new MediaStream();
-            videoStream.getVideoTracks().forEach(function(track) {
-              combinedStream.addTrack(track);
-            });
-            audioStream.getAudioTracks().forEach(function(track) {
-              combinedStream.addTrack(track);
-            });
-            setupScreenShare(combinedStream);
-          }).catch(function() {
-            // No system audio available, use video only
-            console.log('System audio not available, using video only');
-            setupScreenShare(videoStream);
-          });
+        if (filteredSources.length === 0) {
+          filteredSources = sources;
+        }
+        
+        // Show source picker dialog
+        showScreenSourcePicker(filteredSources, function(selectedSource) {
+          if (!selectedSource) return;
           
-          function setupScreenShare(screenStream) {
-            state.screenSharing = true;
-            state.screenStream = screenStream;
-            
-            var voiceScreenBtn = qS('#voice-screen');
-            if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
-            
-            // Show local preview
-            showLocalScreenPreview(screenStream);
-            
-            // Add screen tracks to all peer connections
-            var videoTrack = screenStream.getVideoTracks()[0];
-            var audioTrack = screenStream.getAudioTracks()[0];
-            
-            peerConnections.forEach(function(pc, oderId) {
-              if (videoTrack) {
-                pc.addTrack(videoTrack, screenStream);
-                console.log('Added screen video track to peer:', oderId);
+          // Get video stream
+          navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: selectedSource.id
               }
-              if (audioTrack) {
-                pc.addTrack(audioTrack, screenStream);
-                console.log('Added screen audio track to peer:', oderId);
-              }
-              
-              // Renegotiate connection
-              pc.createOffer().then(function(offer) {
-                return pc.setLocalDescription(offer);
-              }).then(function() {
-                send({
-                  type: 'voice_signal',
-                  to: oderId,
-                  signal: pc.localDescription
-                });
-              });
-            });
-            
-            send({ type: 'voice_screen', screen: true });
-            showNotification('Демонстрация экрана запущена');
-            
-            // Stop sharing when track ends
-            if (videoTrack) {
-              videoTrack.onended = function() {
-                toggleScreenShare();
-              };
             }
-          }
-        }).catch(function(err) {
-          console.error('Screen share error:', err);
-          showNotification('Не удалось запустить демонстрацию экрана');
+          }).then(function(videoStream) {
+            setupScreenShareStream(videoStream);
+          }).catch(function(err) {
+            console.error('Screen share error:', err);
+            showNotification('Не удалось запустить демонстрацию экрана');
+          });
         });
       }).catch(function(err) {
         console.error('Get sources error:', err);
@@ -2111,59 +2053,129 @@ function toggleScreenShare() {
         }
       })
         .then(function(screenStream) {
-          state.screenSharing = true;
-          state.screenStream = screenStream;
-          
-          var voiceScreenBtn = qS('#voice-screen');
-          if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
-          
-          // Show local preview
-          showLocalScreenPreview(screenStream);
-          
-          // Add screen tracks to all peer connections
-          var videoTrack = screenStream.getVideoTracks()[0];
-          var audioTrack = screenStream.getAudioTracks()[0];
-          
-          peerConnections.forEach(function(pc, oderId) {
-            // Add video track
-            if (videoTrack) {
-              pc.addTrack(videoTrack, screenStream);
-              console.log('Added screen video track to peer:', oderId);
-            }
-            
-            // Add audio track if available
-            if (audioTrack) {
-              pc.addTrack(audioTrack, screenStream);
-              console.log('Added screen audio track to peer:', oderId);
-            }
-            
-            // Renegotiate connection
-            pc.createOffer().then(function(offer) {
-              return pc.setLocalDescription(offer);
-            }).then(function() {
-              send({
-                type: 'voice_signal',
-                to: oderId,
-                signal: pc.localDescription
-              });
-            });
-          });
-          
-          send({ type: 'voice_screen', screen: true });
-          showNotification('Демонстрация экрана запущена');
-          
-          // Stop sharing when user stops from browser
-          videoTrack.onended = function() {
-            toggleScreenShare();
-          };
+          setupScreenShareStream(screenStream);
         })
         .catch(function(err) {
           console.error('Screen share error:', err);
-          showNotification('Не удалось запустить демонстрацию экрана');
+          if (err.name !== 'NotAllowedError') {
+            showNotification('Не удалось запустить демонстрацию экрана');
+          }
         });
     } else {
       showNotification('Демонстрация экрана не поддерживается');
     }
+  }
+}
+
+function showScreenSourcePicker(sources, callback) {
+  // Create picker modal
+  var overlay = document.createElement('div');
+  overlay.className = 'screen-picker-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:var(--bg-secondary);border-radius:12px;padding:24px;max-width:600px;max-height:80vh;overflow-y:auto;';
+  
+  var title = document.createElement('h2');
+  title.textContent = 'Выберите источник для демонстрации';
+  title.style.cssText = 'color:var(--text-primary);margin:0 0 20px 0;font-size:20px;';
+  modal.appendChild(title);
+  
+  var grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;';
+  
+  sources.forEach(function(source) {
+    var item = document.createElement('div');
+    item.style.cssText = 'background:var(--bg-tertiary);border-radius:8px;padding:12px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;';
+    item.onmouseenter = function() { item.style.borderColor = 'var(--accent)'; };
+    item.onmouseleave = function() { item.style.borderColor = 'transparent'; };
+    
+    if (source.thumbnail) {
+      var thumb = document.createElement('img');
+      thumb.src = source.thumbnail.toDataURL();
+      thumb.style.cssText = 'width:100%;height:80px;object-fit:cover;border-radius:4px;margin-bottom:8px;';
+      item.appendChild(thumb);
+    }
+    
+    var name = document.createElement('div');
+    name.textContent = source.name.length > 20 ? source.name.substring(0, 20) + '...' : source.name;
+    name.style.cssText = 'color:var(--text-primary);font-size:12px;text-align:center;';
+    item.appendChild(name);
+    
+    item.onclick = function() {
+      document.body.removeChild(overlay);
+      callback(source);
+    };
+    
+    grid.appendChild(item);
+  });
+  
+  modal.appendChild(grid);
+  
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Отмена';
+  cancelBtn.style.cssText = 'margin-top:20px;padding:10px 24px;background:var(--bg-tertiary);color:var(--text-primary);border:none;border-radius:6px;cursor:pointer;width:100%;';
+  cancelBtn.onclick = function() {
+    document.body.removeChild(overlay);
+    callback(null);
+  };
+  modal.appendChild(cancelBtn);
+  
+  overlay.appendChild(modal);
+  overlay.onclick = function(e) {
+    if (e.target === overlay) {
+      document.body.removeChild(overlay);
+      callback(null);
+    }
+  };
+  
+  document.body.appendChild(overlay);
+}
+
+function setupScreenShareStream(screenStream) {
+  state.screenSharing = true;
+  state.screenStream = screenStream;
+  
+  var voiceScreenBtn = qS('#voice-screen');
+  if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
+  
+  // Show local preview
+  showLocalScreenPreview(screenStream);
+  
+  // Add screen tracks to all peer connections
+  var videoTrack = screenStream.getVideoTracks()[0];
+  var audioTrack = screenStream.getAudioTracks()[0];
+  
+  peerConnections.forEach(function(pc, oderId) {
+    if (videoTrack) {
+      pc.addTrack(videoTrack, screenStream);
+      console.log('Added screen video track to peer:', oderId);
+    }
+    if (audioTrack) {
+      pc.addTrack(audioTrack, screenStream);
+      console.log('Added screen audio track to peer:', oderId);
+    }
+    
+    // Renegotiate connection
+    pc.createOffer().then(function(offer) {
+      return pc.setLocalDescription(offer);
+    }).then(function() {
+      send({
+        type: 'voice_signal',
+        to: oderId,
+        signal: pc.localDescription
+      });
+    });
+  });
+  
+  send({ type: 'voice_screen', screen: true });
+  showNotification('Демонстрация экрана запущена');
+  
+  // Stop sharing when track ends
+  if (videoTrack) {
+    videoTrack.onended = function() {
+      toggleScreenShare();
+    };
   }
 }
 
