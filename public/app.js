@@ -84,15 +84,12 @@ function showAuthLoading(text) {
 function hideAuthLoading() {
   var loading = qS('#auth-loading');
   if (loading) {
-    loading.classList.add('fade-out');
-    setTimeout(function() {
-      loading.classList.remove('visible', 'fade-out');
-      // Process pending auth success
-      if (pendingAuthSuccess) {
-        processAuthSuccess(pendingAuthSuccess);
-        pendingAuthSuccess = null;
-      }
-    }, 300);
+    loading.classList.remove('visible', 'fade-out');
+    // Process pending auth success immediately
+    if (pendingAuthSuccess) {
+      processAuthSuccess(pendingAuthSuccess);
+      pendingAuthSuccess = null;
+    }
   }
 }
 
@@ -241,9 +238,8 @@ function handleMessage(msg) {
     pong: function() {},
     
     auth_success: function() {
-      // Store auth data and let hideAuthLoading process it after 5 seconds
-      pendingAuthSuccess = msg;
-      hideAuthLoading();
+      // Process auth immediately without loading screen
+      processAuthSuccess(msg);
     },
     
     auth_error: function() {
@@ -1482,6 +1478,11 @@ function joinVoiceChannel(id) {
       // Update noise button state
       var noiseBtn = qS('#voice-noise');
       if (noiseBtn) noiseBtn.classList.toggle('active', state.noiseSuppressionEnabled);
+      
+      // Reset screen share button state
+      var screenBtn = qS('#voice-screen');
+      if (screenBtn) screenBtn.classList.remove('active');
+      state.screenSharing = false;
       
       send({ type: 'voice_join', channelId: id, serverId: state.currentServer });
       renderChannels();
@@ -2771,7 +2772,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!email || !pwd) return;
     localStorage.setItem('lastEmail', email);
     localStorage.setItem('lastPwd', pwd);
-    showAuthLoading('Входим в аккаунт...');
     send({ type: 'login', email: email, password: pwd });
   };
   
@@ -2782,14 +2782,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!name || !email || !pwd) return;
     localStorage.setItem('lastEmail', email);
     localStorage.setItem('lastPwd', pwd);
-    showAuthLoading('Создаём аккаунт...');
     send({ type: 'register', email: email, password: pwd, name: name });
   };
   
   var guestBtn = qS('#guest-btn');
   if (guestBtn) {
     guestBtn.onclick = function() {
-      showAuthLoading('Входим как гость...');
       send({ type: 'guest_login' });
     };
   }
