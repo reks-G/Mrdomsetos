@@ -95,10 +95,12 @@ async function loadFromDB() {
 async function saveToDB() {
   if (!pool || !useDB) return;
   try {
+    console.log('Saving to DB: accounts:', accounts.size, 'servers:', servers.size, 'friends:', friends.size);
+    
     // Save accounts
     for (const [email, data] of accounts) {
       await pool.query(
-        'INSERT INTO accounts (email, data) VALUES (\$1, \$2) ON CONFLICT (email) DO UPDATE SET data = \$2',
+        'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
         [email, data]
       );
     }
@@ -107,7 +109,7 @@ async function saveToDB() {
     for (const [id, srv] of servers) {
       const data = { ...srv, members: [...srv.members], bans: [...(srv.bans || [])] };
       await pool.query(
-        'INSERT INTO servers (id, data) VALUES (\$1, \$2) ON CONFLICT (id) DO UPDATE SET data = \$2',
+        'INSERT INTO servers (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
         [id, data]
       );
     }
@@ -121,7 +123,7 @@ async function saveToDB() {
         blocked: blockedUsers.has(userId) ? [...blockedUsers.get(userId)] : []
       };
       await pool.query(
-        'INSERT INTO friends (id, data) VALUES (\$1, \$2) ON CONFLICT (id) DO UPDATE SET data = \$2',
+        'INSERT INTO friends (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
         [userId, data]
       );
     }
@@ -129,10 +131,12 @@ async function saveToDB() {
     // Save DM history
     for (const [key, msgs] of dmHistory) {
       await pool.query(
-        'INSERT INTO dm_history (id, data) VALUES (\$1, \$2) ON CONFLICT (id) DO UPDATE SET data = \$2',
+        'INSERT INTO dm_history (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
         [key, msgs]
       );
     }
+    
+    console.log('Saved to DB successfully');
   } catch (e) {
     console.error('DB save error:', e.message);
   }
@@ -218,6 +222,7 @@ if (!useDB) {
 
 // ============ SAVE ============
 function saveAll() {
+  console.log('saveAll called, useDB:', useDB);
   if (useDB) {
     saveToDB();
     return;
