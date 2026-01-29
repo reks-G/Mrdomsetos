@@ -224,7 +224,9 @@ if (!useDB) {
 function saveAll() {
   console.log('saveAll called, useDB:', useDB);
   if (useDB) {
-    saveToDB();
+    saveToDB().catch(function(e) {
+      console.error('saveToDB error:', e);
+    });
     return;
   }
   
@@ -251,7 +253,10 @@ function saveAll() {
   saveJSON(DM_FILE, dmObj);
 }
 
-setInterval(saveAll, 30000);
+setInterval(function() {
+  console.log('Auto-save triggered');
+  saveAll();
+}, 30000);
 process.on('SIGINT', () => { saveAll(); process.exit(); });
 process.on('SIGTERM', () => { saveAll(); process.exit(); });
 
