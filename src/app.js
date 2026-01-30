@@ -136,7 +136,13 @@ function processAuthSuccess(msg) {
     var firstServer = state.servers.keys().next().value;
     openServer(firstServer);
   } else {
-    showFriendsView();
+    // Show friends view
+    state.currentServer = null;
+    state.currentChannel = null;
+    qS('#server-view').classList.remove('active');
+    qS('#home-view').classList.add('active');
+    qS('#members-panel').classList.remove('visible');
+    showView('friends-view');
   }
 }
 
@@ -2155,6 +2161,9 @@ function setupScreenShareStream(screenStream) {
   var voiceScreenBtn = qS('#voice-screen');
   if (voiceScreenBtn) voiceScreenBtn.classList.add('active');
   
+  // Make sure we stay in voice view
+  showView('voice-view');
+  
   // Show local preview
   showLocalScreenPreview(screenStream);
   
@@ -3285,7 +3294,9 @@ document.addEventListener('DOMContentLoaded', function() {
   // Screen share toggle
   var voiceScreenBtn = qS('#voice-screen');
   if (voiceScreenBtn) {
-    voiceScreenBtn.onclick = function() {
+    voiceScreenBtn.onclick = function(e) {
+      e.stopPropagation();
+      e.preventDefault();
       toggleScreenShare();
     };
   }
