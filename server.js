@@ -222,7 +222,6 @@ if (!useDB) {
 
 // ============ SAVE ============
 function saveAll() {
-  console.log('saveAll called, useDB:', useDB);
   if (useDB) {
     saveToDB().catch(function(e) {
       console.error('saveToDB error:', e);
@@ -253,10 +252,7 @@ function saveAll() {
   saveJSON(DM_FILE, dmObj);
 }
 
-setInterval(function() {
-  console.log('Auto-save triggered');
-  saveAll();
-}, 30000);
+setInterval(saveAll, 30000);
 process.on('SIGINT', () => { saveAll(); process.exit(); });
 process.on('SIGTERM', () => { saveAll(); process.exit(); });
 
@@ -1091,17 +1087,12 @@ const handlers = {
     const { name, to } = data;
     const userId = ws.userId;
     
-    console.log('friend_request from', userId, 'to:', to, 'name:', name);
-    console.log('accounts size:', accounts.size, 'onlineUsers size:', onlineUsers.size);
-    
     // Find target by name or by ID
     let target;
     if (to) {
       target = getAccountById(to);
-      console.log('Found by ID:', target ? target.name : 'not found');
     } else if (name) {
       target = getAccountByName(name);
-      console.log('Found by name:', target ? target.id : 'not found');
     }
     
     if (!target) {
@@ -1154,13 +1145,10 @@ const handlers = {
   friend_accept(ws, data) {
     const { from } = data;
     const userId = ws.userId;
-    console.log('friend_accept:', userId, 'accepting', from);
     
     const reqs = friendRequests.get(userId);
-    console.log('pending requests for', userId, ':', reqs ? [...reqs] : 'none');
     
     if (!reqs || !reqs.has(from)) {
-      console.log('Request not found, checking all requests...');
       // Try to find the request
       let found = false;
       if (reqs) {
@@ -1186,7 +1174,6 @@ const handlers = {
     friends.get(from).add(userId);
     saveAll();
     
-    console.log('Friend added:', userId, '<->', from);
     send(ws, { type: 'friend_added', user: getUserData(from) });
     sendToUser(from, { type: 'friend_added', user: getUserData(userId) });
   },
@@ -1500,9 +1487,6 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw);
-      if (data.type !== 'ping') {
-        console.log('WS message:', data.type, 'from:', ws.userId);
-      }
       const handler = handlers[data.type];
       if (handler) {
         handler(ws, data);
