@@ -1505,10 +1505,14 @@ const handlers = {
 wss.on('connection', (ws) => {
   ws.userId = null;
   ws.isGuest = false;
+  console.log('New WebSocket connection');
   
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw);
+      if (data.type !== 'ping') {
+        console.log('MSG:', data.type, 'user:', ws.userId);
+      }
       const handler = handlers[data.type];
       if (handler) {
         handler(ws, data);
