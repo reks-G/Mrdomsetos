@@ -18,7 +18,7 @@ if (DATABASE_URL) {
     });
     useDB = true;
     console.log('Using PostgreSQL database');
-    initDB();
+    // initDB() will be called after Maps are declared
   } catch (e) {
     console.log('PostgreSQL not available, using JSON files');
   }
@@ -218,6 +218,11 @@ if (!useDB) {
   Object.entries(loadJSON(DM_FILE)).forEach(([key, msgs]) => {
     dmHistory.set(key, msgs);
   });
+}
+
+// Initialize DB after Maps are declared
+if (useDB) {
+  initDB();
 }
 
 // ============ SAVE ============
