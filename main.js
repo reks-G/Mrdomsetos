@@ -4,30 +4,8 @@ const path = require('path');
 let mainWindow;
 let tray;
 
-// Запуск встроенного сервера
-function startServer() {
-  const net = require('net');
-  const PORT = 3001;
-  
-  // Check if port is already in use
-  const tester = net.createServer()
-    .once('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.log(`Port ${PORT} already in use, server might be running`);
-      }
-    })
-    .once('listening', () => {
-      tester.close(() => {
-        try {
-          require('./server.js');
-          console.log('WebSocket server started');
-        } catch (e) {
-          console.error('Server error:', e);
-        }
-      });
-    })
-    .listen(PORT);
-}
+// Локальный сервер отключен - используем Render сервер
+// function startServer() { ... }
 
 function createWindow() {
   // Отключаем кэш
@@ -194,7 +172,7 @@ ipcMain.handle('get-screen-sources', async () => {
 });
 
 app.whenReady().then(() => {
-  startServer();
+  // Локальный сервер отключен - десктоп использует Render сервер
   createWindow();
   createTray();
 });
