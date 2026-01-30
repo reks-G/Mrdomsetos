@@ -66,6 +66,8 @@ async function loadFromDB() {
     const srvRes = await pool.query('SELECT * FROM servers');
     srvRes.rows.forEach(row => {
       const srv = row.data;
+      const msgCount = srv.messages ? Object.values(srv.messages).reduce((a, b) => a + (b ? b.length : 0), 0) : 0;
+      console.log('Loading server:', row.id, 'messages:', msgCount);
       servers.set(row.id, {
         ...srv,
         members: new Set(srv.members || []),
@@ -101,13 +103,29 @@ async function saveToDB() {
     for (const [email, data] of accounts) {
       await pool.query(
         'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
-        [email, data]
+        [email, JSON.parse(JSON.stringify(data))]
       );
     }
     
-    // Save servers
+    // Save servers with all data including messages
     for (const [id, srv] of servers) {
-      const data = { ...srv, members: [...srv.members], bans: [...(srv.bans || [])] };
+      const msgCount = srv.messages ? Object.values(srv.messages).reduce((a, b) => a + (b ? b.length : 0), 0) : 0;
+      console.log('Saving server:', id, 'messages:', msgCount);
+      const data = {
+        id: srv.id,
+        name: srv.name,
+        icon: srv.icon,
+        region: srv.region,
+        ownerId: srv.ownerId,
+        channels: srv.channels || [],
+        voiceChannels: srv.voiceChannels || [],
+        messages: srv.messages || {},
+        members: [...(srv.members || [])],
+        roles: srv.roles || [],
+        memberRoles: srv.memberRoles || {},
+        channelPermissions: srv.channelPermissions || {},
+        bans: [...(srv.bans || [])]
+      };
       await pool.query(
         'INSERT INTO servers (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
         [id, data]
