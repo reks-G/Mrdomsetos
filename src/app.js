@@ -134,7 +134,7 @@ function processAuthSuccess(msg) {
   
   if (state.servers.size > 0) {
     var firstServer = state.servers.keys().next().value;
-    selectServer(firstServer);
+    openServer(firstServer);
   } else {
     showFriendsView();
   }
