@@ -1,5 +1,5 @@
 // ============ CONFIG ============
-var RENDER_URL = 'wss://discord-clone-ws.onrender.com';
+var RENDER_URL = 'wss://discord-clone-ws-1gb0.onrender.com';
 // Always use Render server for sync between web and desktop
 var WS_URL = RENDER_URL;
 
