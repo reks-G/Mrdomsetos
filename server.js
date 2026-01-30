@@ -242,6 +242,7 @@ if (!useDB) {
 
 // ============ SAVE ============
 function saveAll() {
+  console.log('saveAll called, useDB:', useDB, 'servers:', servers.size);
   if (useDB) {
     saveToDB().catch(function(e) {
       console.error('saveToDB error:', e);
@@ -827,6 +828,7 @@ const handlers = {
       bans: new Set()
     };
     servers.set(serverId, srv);
+    console.log('Server created:', serverId, 'Total servers:', servers.size);
     saveAll();
     
     send(ws, {
