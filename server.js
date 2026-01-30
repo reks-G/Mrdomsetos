@@ -124,7 +124,8 @@ async function saveToDB() {
         roles: srv.roles || [],
         memberRoles: srv.memberRoles || {},
         channelPermissions: srv.channelPermissions || {},
-        bans: [...(srv.bans || [])]
+        bans: [...(srv.bans || [])],
+        invites: srv.invites || {}
       };
       await pool.query(
         'INSERT INTO servers (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
@@ -993,41 +994,56 @@ const handlers = {
     if (!srv || !srv.members.has(userId)) return;
     
     const code = genInvite();
-    invites.set(code, { serverId, createdBy: userId, createdAt: Date.now() });
+    // Store invite in server object so it persists
+    if (!srv.invites) srv.invites = {};
+    srv.invites[code] = { createdBy: userId, createdAt: Date.now() };
+    saveAll();
     send(ws, { type: 'invite_created', code, serverId });
   },
 
   use_invite(ws, data) {
     const { code } = data;
     const userId = ws.userId;
-    const invite = invites.get(code);
     
-    if (!invite) {
+    // Find server with this invite
+    let foundServer = null;
+    let foundServerId = null;
+    for (const [srvId, srv] of servers) {
+      if (srv.invites && srv.invites[code]) {
+        foundServer = srv;
+        foundServerId = srvId;
+        break;
+      }
+    }
+    
+    if (!foundServer) {
       send(ws, { type: 'invite_error', message: 'Недействительный код' });
       return;
     }
     
-    const srv = servers.get(invite.serverId);
-    if (!srv) return;
-    
-    if (srv.bans && srv.bans.has(userId)) {
+    if (foundServer.bans && foundServer.bans.has(userId)) {
       send(ws, { type: 'invite_error', message: 'Вы забанены на этом сервере' });
       return;
     }
     
-    srv.members.add(userId);
-    srv.memberRoles[userId] = 'default';
+    if (foundServer.members.has(userId)) {
+      send(ws, { type: 'invite_error', message: 'Вы уже на этом сервере' });
+      return;
+    }
+    
+    foundServer.members.add(userId);
+    foundServer.memberRoles[userId] = 'default';
     saveAll();
     
     send(ws, {
       type: 'server_joined',
-      serverId: invite.serverId,
-      server: { ...srv, members: [...srv.members], bans: [] }
+      serverId: foundServerId,
+      server: { ...foundServer, members: [...foundServer.members], bans: [], invites: undefined }
     });
     
-    broadcastToServer(invite.serverId, {
+    broadcastToServer(foundServerId, {
       type: 'member_joined',
-      serverId: invite.serverId,
+      serverId: foundServerId,
       user: getUserData(userId)
     }, userId);
   },
@@ -1156,6 +1172,7 @@ const handlers = {
     friendRequests.get(target.id).add(userId);
     saveAll();
     
+    console.log('Friend request from', userId, 'to', target.id, target.name);
     sendToUser(target.id, {
       type: 'friend_request_incoming',
       from: userId,
