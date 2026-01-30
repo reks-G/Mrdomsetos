@@ -238,10 +238,7 @@ if (!useDB) {
   });
 }
 
-// Initialize DB after Maps are declared
-if (useDB) {
-  initDB();
-}
+// DB will be initialized in startServer()
 
 // ============ SAVE ============
 function saveAll() {
@@ -1555,4 +1552,19 @@ wss.on('connection', (ws) => {
 
 // ============ START ============
 const PORT = process.env.PORT || 3001;
-httpServer.listen(PORT, () => console.log('Server running on port', PORT));
+
+async function startServer() {
+  if (useDB && pool) {
+    try {
+      await initDB();
+      console.log('Database ready');
+    } catch (e) {
+      console.error('DB init error:', e);
+    }
+  }
+  httpServer.listen(PORT, function() {
+    console.log('Server running on port', PORT);
+  });
+}
+
+startServer();
