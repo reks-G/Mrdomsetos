@@ -674,6 +674,20 @@ function handleMessage(msg) {
       }
     },
     
+    voice_screen_update: function() {
+      console.log('Screen update from:', msg.userId, 'screen:', msg.screen);
+      // Another user started/stopped screen sharing
+      if (msg.userId !== state.userId) {
+        if (msg.screen) {
+          showNotification('Пользователь начал демонстрацию экрана');
+        } else {
+          // Remove their screen share window
+          var container = document.getElementById('screen-share-container-' + msg.userId);
+          if (container) container.remove();
+        }
+      }
+    },
+    
     voice_signal: function() {
       if (msg.from && msg.signal) {
         handleVoiceSignal(msg.from, msg.signal);
