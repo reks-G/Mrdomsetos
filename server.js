@@ -872,7 +872,7 @@ const handlers = {
     saveAll();
     
     addAuditEntry(serverId, userId, 'server_update', 'Настройки сервера обновлены');
-    broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon, region: srv.region });
+    broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon, region: srv.region, description: srv.description, privacy: srv.privacy });
   },
 
   delete_server(ws, data) {

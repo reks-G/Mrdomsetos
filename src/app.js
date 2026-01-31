@@ -281,6 +281,8 @@ function handleMessage(msg) {
         if (msg.name) srv.name = msg.name;
         if (msg.icon !== undefined) srv.icon = msg.icon;
         if (msg.region) srv.region = msg.region;
+        if (msg.description !== undefined) srv.description = msg.description;
+        if (msg.privacy) srv.privacy = msg.privacy;
         renderServers();
         if (state.currentServer === msg.serverId) {
           qS('#server-name').textContent = srv.name;
@@ -883,22 +885,23 @@ function renderMembers() {
   if (!srv || !ol || !ofl) return;
   
   var mems = srv.membersData || [];
-  var hoistedRoles = (srv.roles || []).filter(function(r) { return r.hoist; }).sort(function(a, b) { return (a.position || 0) - (b.position || 0); });
+  var roles = srv.roles || [];
   
-  // Group members by hoisted roles
-  var grouped = {};
+  // Group members by their role
+  var roleGroups = {};
   var ungroupedOnline = [];
   var ungroupedOffline = [];
   
   mems.forEach(function(m) {
-    var memberRole = srv.memberRoles ? srv.memberRoles[m.id] : null;
-    var hoistedRole = hoistedRoles.find(function(r) { return r.id === memberRole; });
+    var memberRoleId = srv.memberRoles ? srv.memberRoles[m.id] : null;
+    var memberRole = memberRoleId ? roles.find(function(r) { return r.id === memberRoleId; }) : null;
     
-    if (hoistedRole) {
-      if (!grouped[hoistedRole.id]) {
-        grouped[hoistedRole.id] = { role: hoistedRole, members: [] };
+    // If member has a role with hoist enabled, group by role name
+    if (memberRole && memberRole.hoist) {
+      if (!roleGroups[memberRole.id]) {
+        roleGroups[memberRole.id] = { role: memberRole, members: [] };
       }
-      grouped[hoistedRole.id].members.push(m);
+      roleGroups[memberRole.id].members.push(m);
     } else if (m.status === 'online') {
       ungroupedOnline.push(m);
     } else {
@@ -906,21 +909,34 @@ function renderMembers() {
     }
   });
   
-  // Build HTML with hoisted role groups
+  // Build HTML - first show role groups, then online, then offline
   var html = '';
-  hoistedRoles.forEach(function(role) {
-    if (grouped[role.id] && grouped[role.id].members.length > 0) {
-      html += '<div class="member-group">';
-      html += '<div class="member-group-header" style="color: ' + (role.color || 'var(--text-muted)') + '">' + escapeHtml(role.name) + ' — ' + grouped[role.id].members.length + '</div>';
-      html += grouped[role.id].members.map(memberHTML).join('');
-      html += '</div>';
-    }
+  
+  // Sort roles by position and render groups
+  var sortedRoles = Object.values(roleGroups).sort(function(a, b) { 
+    return (a.role.position || 0) - (b.role.position || 0); 
   });
+  
+  sortedRoles.forEach(function(group) {
+    html += '<div class="member-group">';
+    html += '<div class="member-group-header" style="color: ' + (group.role.color || 'var(--text-muted)') + '">' + 
+      escapeHtml(group.role.name).toUpperCase() + ' — ' + group.members.length + '</div>';
+    html += group.members.map(memberHTML).join('');
+    html += '</div>';
+  });
+  
+  // Add online section if there are ungrouped online members
+  if (ungroupedOnline.length > 0) {
+    html += '<div class="member-group">';
+    html += '<div class="member-group-header">В СЕТИ — ' + ungroupedOnline.length + '</div>';
+    html += ungroupedOnline.map(memberHTML).join('');
+    html += '</div>';
+  }
   
   qS('#online-count').textContent = ungroupedOnline.length;
   qS('#offline-count').textContent = ungroupedOffline.length;
   
-  ol.innerHTML = html + ungroupedOnline.map(memberHTML).join('');
+  ol.innerHTML = html;
   ofl.innerHTML = ungroupedOffline.map(memberHTML).join('');
   
   // Bind member context menu
@@ -2803,10 +2819,17 @@ function showSelfContext(x, y) {
     showNotification('Редактирование профиля сервера скоро будет доступно');
   };
   
-  ctx.querySelector('[data-action="view-roles"]').onclick = function() {
-    hideContextMenu();
+  ctx.querySelector('[data-action="view-roles"]').onclick = function(e) {
+    e.stopPropagation();
     var srv = state.servers.get(state.currentServer);
-    if (srv && srv.roles) {
+    var isOwner = srv && srv.ownerId === state.userId;
+    var canManage = isOwner || hasPermission('manage_roles');
+    
+    if (canManage) {
+      // Show roles submenu for assigning roles to self
+      showRolesSubmenu(e.clientX, e.clientY, state.userId);
+    } else {
+      hideContextMenu();
       var myRoleId = srv.memberRoles ? srv.memberRoles[state.userId] : null;
       var myRole = myRoleId ? srv.roles.find(function(r) { return r.id === myRoleId; }) : null;
       if (myRole) {
