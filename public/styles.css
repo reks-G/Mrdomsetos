@@ -1004,7 +1004,7 @@ body::before {
 /* Context Menu - Glass */
 .context-menu {
   position: fixed;
-  background: rgba(20, 20, 25, 0.9);
+  background: rgba(20, 20, 25, 0.95);
   backdrop-filter: var(--blur-heavy);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1033,6 +1033,192 @@ body::before {
 .context-menu button:hover { background: var(--bg-glass); color: var(--text-primary); }
 .context-menu button.danger:hover { background: rgba(244, 63, 94, 0.15); color: var(--danger); }
 .context-menu .divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+/* Modern Context Menu */
+.context-menu.modern {
+  min-width: 260px;
+  padding: 6px;
+  background: rgba(15, 15, 18, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.context-menu.modern button {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.context-menu.modern button span {
+  flex: 1;
+  text-align: left;
+}
+
+.context-menu.modern button svg {
+  width: 20px;
+  height: 20px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.context-menu.modern button:hover svg {
+  opacity: 1;
+}
+
+.context-menu.modern .divider {
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Toggle in context menu */
+.context-menu.modern button.has-toggle {
+  justify-content: space-between;
+}
+
+.ctx-toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.ctx-toggle::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ctx-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ctx-toggle.active::after {
+  transform: translateX(18px);
+}
+
+/* Submenu styles */
+.context-menu.modern button.has-submenu {
+  justify-content: flex-start;
+}
+
+.context-menu.modern button.has-submenu .submenu-arrow {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  opacity: 0.4;
+}
+
+.context-menu.modern .ctx-badge {
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Admin actions hidden by default */
+.context-menu.modern .admin-action {
+  display: none;
+}
+
+.context-menu.modern .admin-divider {
+  display: none;
+}
+
+.context-menu.modern.show-admin .admin-action {
+  display: flex;
+}
+
+.context-menu.modern.show-admin .admin-divider {
+  display: block;
+}
+
+/* Roles submenu */
+.context-menu.submenu {
+  min-width: 220px;
+}
+
+.submenu-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.roles-submenu-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.role-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.role-submenu-item:hover {
+  background: var(--bg-glass);
+}
+
+.role-submenu-item .role-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.role-submenu-item .role-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.role-submenu-item .role-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.role-submenu-item .role-check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.role-submenu-item .role-check.checked::after {
+  content: '';
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-bottom: 2px;
+}
 
 /* Modals - Glass */
 .modal {

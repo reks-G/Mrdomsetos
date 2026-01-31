@@ -2617,54 +2617,54 @@ function showMemberContext(x, y, memberId) {
     return;
   }
   
-  var ctx = qS('#member-context');
+  var ctx = qS('#member-context-full');
   if (!ctx) return;
   
   var srv = state.servers.get(state.currentServer);
   var isOwner = srv && srv.ownerId === state.userId;
   var isMemberOwner = srv && srv.ownerId === memberId;
+  var canManageRoles = isOwner || hasPermission('manage_roles');
+  var canKick = isOwner || hasPermission('kick');
+  var canBan = isOwner || hasPermission('ban');
+  var showAdmin = (canManageRoles || canKick || canBan) && !isMemberOwner;
   
-  // Show/hide admin buttons
-  var kickBtn = ctx.querySelector('[data-action="kick-member"]');
-  var banBtn = ctx.querySelector('[data-action="ban-member"]');
-  var divider = ctx.querySelector('.divider');
-  var showAdmin = isOwner && !isMemberOwner;
-  if (kickBtn) kickBtn.style.display = showAdmin ? 'flex' : 'none';
-  if (banBtn) banBtn.style.display = showAdmin ? 'flex' : 'none';
-  if (divider) divider.style.display = showAdmin ? 'block' : 'none';
+  // Show/hide admin actions
+  ctx.classList.toggle('show-admin', showAdmin);
   
   positionContextMenu(ctx, x, y);
   ctx.classList.add('visible');
   ctx.dataset.userId = memberId;
   
   // Bind actions
-  var viewProfileBtn = ctx.querySelector('[data-action="view-profile"]');
-  if (viewProfileBtn) {
-    viewProfileBtn.onclick = function() {
-      hideContextMenu();
-      showUserProfile(memberId);
-    };
-  }
+  ctx.querySelector('[data-action="view-profile"]').onclick = function() {
+    hideContextMenu();
+    showUserProfile(memberId);
+  };
+  
+  ctx.querySelector('[data-action="mention"]').onclick = function() {
+    hideContextMenu();
+    var member = srv.membersData ? srv.membersData.find(function(m) { return m.id === memberId; }) : null;
+    var input = qS('#msg-input');
+    if (input && member) {
+      input.value += '@' + member.name + ' ';
+      input.focus();
+    }
+  };
   
   ctx.querySelector('[data-action="send-dm"]').onclick = function() {
     hideContextMenu();
     openDM(memberId);
   };
   
-  var voiceCallBtn = ctx.querySelector('[data-action="voice-call"]');
-  if (voiceCallBtn) {
-    voiceCallBtn.onclick = function() {
-      hideContextMenu();
-      startPrivateCall(memberId);
+  var manageRolesBtn = ctx.querySelector('[data-action="manage-roles"]');
+  if (manageRolesBtn) {
+    manageRolesBtn.onclick = function(e) {
+      e.stopPropagation();
+      showRolesSubmenu(e.clientX, e.clientY, memberId);
     };
   }
   
-  ctx.querySelector('[data-action="add-friend"]').onclick = function() {
-    hideContextMenu();
-    send({ type: 'friend_request', to: memberId });
-    showNotification('Запрос в друзья отправлен!');
-  };
-  
+  var kickBtn = ctx.querySelector('[data-action="kick-member"]');
   if (kickBtn) {
     kickBtn.onclick = function() {
       hideContextMenu();
@@ -2674,6 +2674,7 @@ function showMemberContext(x, y, memberId) {
     };
   }
   
+  var banBtn = ctx.querySelector('[data-action="ban-member"]');
   if (banBtn) {
     banBtn.onclick = function() {
       hideContextMenu();
@@ -2682,17 +2683,84 @@ function showMemberContext(x, y, memberId) {
       }
     };
   }
+  
+  ctx.querySelector('[data-action="copy-user-id"]').onclick = function() {
+    hideContextMenu();
+    navigator.clipboard.writeText(memberId).then(function() {
+      showNotification('ID скопирован!');
+    });
+  };
+}
+
+function showRolesSubmenu(x, y, memberId) {
+  var submenu = qS('#roles-submenu');
+  if (!submenu) return;
+  
+  var srv = state.servers.get(state.currentServer);
+  if (!srv || !srv.roles) return;
+  
+  var memberRoleId = srv.memberRoles ? srv.memberRoles[memberId] : null;
+  
+  var list = qS('#roles-submenu-list');
+  list.innerHTML = srv.roles.filter(function(r) { return r.id !== 'owner'; }).map(function(role) {
+    var isAssigned = memberRoleId === role.id;
+    return '<div class="role-submenu-item" data-role-id="' + role.id + '" data-member-id="' + memberId + '">' +
+      '<div class="role-dot" style="background: ' + (role.color || '#99aab5') + '"></div>' +
+      '<span class="role-name">' + escapeHtml(role.name) + '</span>' +
+      '<div class="role-check ' + (isAssigned ? 'checked' : '') + '"></div>' +
+      '</div>';
+  }).join('');
+  
+  // Bind click handlers
+  list.querySelectorAll('.role-submenu-item').forEach(function(item) {
+    item.onclick = function() {
+      var roleId = item.dataset.roleId;
+      var targetMemberId = item.dataset.memberId;
+      var check = item.querySelector('.role-check');
+      var isChecked = check.classList.contains('checked');
+      
+      if (isChecked) {
+        // Remove role
+        send({ type: 'remove_member_role', serverId: state.currentServer, memberId: targetMemberId, roleId: roleId });
+        check.classList.remove('checked');
+      } else {
+        // Assign role
+        send({ type: 'assign_role', serverId: state.currentServer, memberId: targetMemberId, roleId: roleId });
+        // Uncheck others and check this one
+        list.querySelectorAll('.role-check').forEach(function(c) { c.classList.remove('checked'); });
+        check.classList.add('checked');
+      }
+      showNotification(isChecked ? 'Роль снята' : 'Роль назначена');
+    };
+  });
+  
+  positionContextMenu(submenu, x + 10, y);
+  submenu.classList.add('visible');
+}
+
+function hasPermission(perm) {
+  var srv = state.servers.get(state.currentServer);
+  if (!srv) return false;
+  if (srv.ownerId === state.userId) return true;
+  
+  var myRoleId = srv.memberRoles ? srv.memberRoles[state.userId] : null;
+  if (!myRoleId) return false;
+  
+  var myRole = srv.roles ? srv.roles.find(function(r) { return r.id === myRoleId; }) : null;
+  if (!myRole || !myRole.permissions) return false;
+  
+  return myRole.permissions.includes(perm) || myRole.permissions.includes('admin') || myRole.permissions.includes('all');
 }
 
 function showSelfContext(x, y) {
   var ctx = qS('#self-context');
   if (!ctx) return;
   
-  // Update checkbox states
-  var muteCheckbox = qS('#ctx-mute-checkbox');
-  var deafenCheckbox = qS('#ctx-deafen-checkbox');
-  if (muteCheckbox) muteCheckbox.classList.toggle('checked', state.isMuted);
-  if (deafenCheckbox) deafenCheckbox.classList.toggle('checked', state.isDeafened);
+  // Update toggle states
+  var muteToggle = qS('#ctx-mute-toggle');
+  var deafenToggle = qS('#ctx-deafen-toggle');
+  if (muteToggle) muteToggle.classList.toggle('active', state.isMuted);
+  if (deafenToggle) deafenToggle.classList.toggle('active', state.isDeafened);
   
   positionContextMenu(ctx, x, y);
   ctx.classList.add('visible');
@@ -2714,8 +2782,8 @@ function showSelfContext(x, y) {
   
   ctx.querySelector('[data-action="mute-self"]').onclick = function() {
     state.isMuted = !state.isMuted;
-    var muteCheckbox = qS('#ctx-mute-checkbox');
-    if (muteCheckbox) muteCheckbox.classList.toggle('checked', state.isMuted);
+    var muteToggle = qS('#ctx-mute-toggle');
+    if (muteToggle) muteToggle.classList.toggle('active', state.isMuted);
     var muteBtn = qS('#mute-btn');
     if (muteBtn) muteBtn.classList.toggle('active', state.isMuted);
     showNotification(state.isMuted ? 'Микрофон выключен' : 'Микрофон включён');
@@ -2723,8 +2791,8 @@ function showSelfContext(x, y) {
   
   ctx.querySelector('[data-action="deafen-self"]').onclick = function() {
     state.isDeafened = !state.isDeafened;
-    var deafenCheckbox = qS('#ctx-deafen-checkbox');
-    if (deafenCheckbox) deafenCheckbox.classList.toggle('checked', state.isDeafened);
+    var deafenToggle = qS('#ctx-deafen-toggle');
+    if (deafenToggle) deafenToggle.classList.toggle('active', state.isDeafened);
     var deafenBtn = qS('#deafen-btn');
     if (deafenBtn) deafenBtn.classList.toggle('active', state.isDeafened);
     showNotification(state.isDeafened ? 'Звук выключен' : 'Звук включён');
@@ -2739,11 +2807,10 @@ function showSelfContext(x, y) {
     hideContextMenu();
     var srv = state.servers.get(state.currentServer);
     if (srv && srv.roles) {
-      var myRoles = srv.roles.filter(function(r) {
-        return srv.memberRoles && srv.memberRoles[state.userId] === r.id;
-      });
-      if (myRoles.length) {
-        showNotification('Ваши роли: ' + myRoles.map(function(r) { return r.name; }).join(', '));
+      var myRoleId = srv.memberRoles ? srv.memberRoles[state.userId] : null;
+      var myRole = myRoleId ? srv.roles.find(function(r) { return r.id === myRoleId; }) : null;
+      if (myRole) {
+        showNotification('Ваша роль: ' + myRole.name);
       } else {
         showNotification('У вас нет специальных ролей');
       }
