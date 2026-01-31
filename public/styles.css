@@ -3488,3 +3488,41 @@ textarea:focus {
 .btn.danger-outline:hover {
   background: rgba(244, 63, 94, 0.1);
 }
+
+
+/* Compact button */
+.btn-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-compact svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-compact:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-light);
+}
+
+.btn-compact.primary {
+  background: linear-gradient(135deg, var(--accent), #3b82f6);
+  border: none;
+  color: white;
+}
+
+.btn-compact.primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
