@@ -3842,3 +3842,171 @@ textarea:focus {
   background: var(--danger);
   border-color: var(--danger);
 }
+
+
+/* ============ FANCY EMPTY STATE ============ */
+.empty-state-fancy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state-fancy .empty-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.empty-state-fancy .empty-icon svg {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.empty-state-fancy h4 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.empty-state-fancy p {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 280px;
+}
+
+/* ============ SELF CONTEXT MENU STYLES ============ */
+#self-context button.has-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#self-context button.has-checkbox span {
+  flex: 1;
+}
+
+.ctx-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-light);
+  border-radius: 4px;
+  background: transparent;
+  transition: all 0.2s;
+}
+
+.ctx-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  position: relative;
+}
+
+.ctx-checkbox.checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+#self-context button.has-submenu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#self-context button.has-submenu span {
+  flex: 1;
+}
+
+.submenu-arrow {
+  width: 16px;
+  height: 16px;
+  opacity: 0.5;
+}
+
+.ctx-badge {
+  padding: 2px 6px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Role item improvements */
+.role-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-glass);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+
+.role-item:hover {
+  background: var(--bg-glass-hover);
+}
+
+.role-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.role-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.role-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.role-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.role-actions .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+
+/* Member group for hoisted roles */
+.member-group {
+  margin-bottom: 16px;
+}
+
+.member-group-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+}

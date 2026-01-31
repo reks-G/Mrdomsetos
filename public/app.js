@@ -883,14 +883,45 @@ function renderMembers() {
   if (!srv || !ol || !ofl) return;
   
   var mems = srv.membersData || [];
-  var on = mems.filter(function(m) { return m.status === 'online'; });
-  var off = mems.filter(function(m) { return m.status !== 'online'; });
+  var hoistedRoles = (srv.roles || []).filter(function(r) { return r.hoist; }).sort(function(a, b) { return (a.position || 0) - (b.position || 0); });
   
-  qS('#online-count').textContent = on.length;
-  qS('#offline-count').textContent = off.length;
+  // Group members by hoisted roles
+  var grouped = {};
+  var ungroupedOnline = [];
+  var ungroupedOffline = [];
   
-  ol.innerHTML = on.map(memberHTML).join('');
-  ofl.innerHTML = off.map(memberHTML).join('');
+  mems.forEach(function(m) {
+    var memberRole = srv.memberRoles ? srv.memberRoles[m.id] : null;
+    var hoistedRole = hoistedRoles.find(function(r) { return r.id === memberRole; });
+    
+    if (hoistedRole) {
+      if (!grouped[hoistedRole.id]) {
+        grouped[hoistedRole.id] = { role: hoistedRole, members: [] };
+      }
+      grouped[hoistedRole.id].members.push(m);
+    } else if (m.status === 'online') {
+      ungroupedOnline.push(m);
+    } else {
+      ungroupedOffline.push(m);
+    }
+  });
+  
+  // Build HTML with hoisted role groups
+  var html = '';
+  hoistedRoles.forEach(function(role) {
+    if (grouped[role.id] && grouped[role.id].members.length > 0) {
+      html += '<div class="member-group">';
+      html += '<div class="member-group-header" style="color: ' + (role.color || 'var(--text-muted)') + '">' + escapeHtml(role.name) + ' — ' + grouped[role.id].members.length + '</div>';
+      html += grouped[role.id].members.map(memberHTML).join('');
+      html += '</div>';
+    }
+  });
+  
+  qS('#online-count').textContent = ungroupedOnline.length;
+  qS('#offline-count').textContent = ungroupedOffline.length;
+  
+  ol.innerHTML = html + ungroupedOnline.map(memberHTML).join('');
+  ofl.innerHTML = ungroupedOffline.map(memberHTML).join('');
   
   // Bind member context menu
   qSA('.member-item').forEach(function(el) {
@@ -1109,8 +1140,35 @@ function renderRoles() {
         qS('#role-modal-title').textContent = 'Редактировать роль';
         qS('#role-name-input').value = role.name;
         qS('#role-color-input').value = role.color || '#99aab5';
+        var hexInput = qS('#role-color-hex');
+        if (hexInput) hexInput.value = role.color || '#99aab5';
         qS('#role-color-preview').style.background = role.color || '#99aab5';
+        // Set color preset active
+        qSA('.color-preset').forEach(function(p) { 
+          p.classList.toggle('active', p.dataset.color === (role.color || '#99aab5'));
+        });
+        // Set hoist and mentionable
+        var hoistCheckbox = qS('#role-hoist');
+        if (hoistCheckbox) hoistCheckbox.checked = role.hoist || false;
+        var mentionableCheckbox = qS('#role-mentionable');
+        if (mentionableCheckbox) mentionableCheckbox.checked = role.mentionable || false;
+        // Set role icon
+        var iconPreview = qS('#role-icon-preview');
+        if (iconPreview) {
+          if (role.icon) {
+            iconPreview.innerHTML = '<img src="' + role.icon + '">';
+            state.roleIcon = role.icon;
+          } else {
+            iconPreview.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+            state.roleIcon = null;
+          }
+        }
         setPermissionCheckboxes(role.permissions || []);
+        // Reset to first tab
+        qSA('.role-tab').forEach(function(t) { t.classList.remove('active'); });
+        qS('.role-tab[data-role-tab="general"]').classList.add('active');
+        qSA('.role-panel').forEach(function(p) { p.classList.remove('active'); });
+        qS('#role-panel-general').classList.add('active');
         openModal('role-modal');
       }
     };
@@ -2552,11 +2610,15 @@ function positionContextMenu(ctx, x, y) {
 
 function showMemberContext(x, y, memberId) {
   hideContextMenu();
+  
+  // Show self context menu for yourself
+  if (memberId === state.userId) {
+    showSelfContext(x, y);
+    return;
+  }
+  
   var ctx = qS('#member-context');
   if (!ctx) return;
-  
-  // Don't show menu for yourself
-  if (memberId === state.userId) return;
   
   var srv = state.servers.get(state.currentServer);
   var isOwner = srv && srv.ownerId === state.userId;
@@ -2620,6 +2682,80 @@ function showMemberContext(x, y, memberId) {
       }
     };
   }
+}
+
+function showSelfContext(x, y) {
+  var ctx = qS('#self-context');
+  if (!ctx) return;
+  
+  // Update checkbox states
+  var muteCheckbox = qS('#ctx-mute-checkbox');
+  var deafenCheckbox = qS('#ctx-deafen-checkbox');
+  if (muteCheckbox) muteCheckbox.classList.toggle('checked', state.isMuted);
+  if (deafenCheckbox) deafenCheckbox.classList.toggle('checked', state.isDeafened);
+  
+  positionContextMenu(ctx, x, y);
+  ctx.classList.add('visible');
+  
+  // Bind actions
+  ctx.querySelector('[data-action="view-profile"]').onclick = function() {
+    hideContextMenu();
+    showUserProfile(state.userId);
+  };
+  
+  ctx.querySelector('[data-action="mention-self"]').onclick = function() {
+    hideContextMenu();
+    var input = qS('#msg-input');
+    if (input) {
+      input.value += '@' + state.username + ' ';
+      input.focus();
+    }
+  };
+  
+  ctx.querySelector('[data-action="mute-self"]').onclick = function() {
+    state.isMuted = !state.isMuted;
+    var muteCheckbox = qS('#ctx-mute-checkbox');
+    if (muteCheckbox) muteCheckbox.classList.toggle('checked', state.isMuted);
+    var muteBtn = qS('#mute-btn');
+    if (muteBtn) muteBtn.classList.toggle('active', state.isMuted);
+    showNotification(state.isMuted ? 'Микрофон выключен' : 'Микрофон включён');
+  };
+  
+  ctx.querySelector('[data-action="deafen-self"]').onclick = function() {
+    state.isDeafened = !state.isDeafened;
+    var deafenCheckbox = qS('#ctx-deafen-checkbox');
+    if (deafenCheckbox) deafenCheckbox.classList.toggle('checked', state.isDeafened);
+    var deafenBtn = qS('#deafen-btn');
+    if (deafenBtn) deafenBtn.classList.toggle('active', state.isDeafened);
+    showNotification(state.isDeafened ? 'Звук выключен' : 'Звук включён');
+  };
+  
+  ctx.querySelector('[data-action="edit-server-profile"]').onclick = function() {
+    hideContextMenu();
+    showNotification('Редактирование профиля сервера скоро будет доступно');
+  };
+  
+  ctx.querySelector('[data-action="view-roles"]').onclick = function() {
+    hideContextMenu();
+    var srv = state.servers.get(state.currentServer);
+    if (srv && srv.roles) {
+      var myRoles = srv.roles.filter(function(r) {
+        return srv.memberRoles && srv.memberRoles[state.userId] === r.id;
+      });
+      if (myRoles.length) {
+        showNotification('Ваши роли: ' + myRoles.map(function(r) { return r.name; }).join(', '));
+      } else {
+        showNotification('У вас нет специальных ролей');
+      }
+    }
+  };
+  
+  ctx.querySelector('[data-action="copy-user-id"]').onclick = function() {
+    hideContextMenu();
+    navigator.clipboard.writeText(state.userId).then(function() {
+      showNotification('ID скопирован!');
+    });
+  };
 }
 
 function showUserProfile(userId) {
@@ -3667,6 +3803,11 @@ document.addEventListener('DOMContentLoaded', function() {
         iconPreview.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
       }
       state.roleIcon = null;
+      // Reset hoist and mentionable
+      var hoistCheckbox = qS('#role-hoist');
+      if (hoistCheckbox) hoistCheckbox.checked = false;
+      var mentionableCheckbox = qS('#role-mentionable');
+      if (mentionableCheckbox) mentionableCheckbox.checked = false;
       // Reset to first tab
       qSA('.role-tab').forEach(function(t) { t.classList.remove('active'); });
       qS('.role-tab[data-role-tab="general"]').classList.add('active');
@@ -3763,6 +3904,8 @@ document.addEventListener('DOMContentLoaded', function() {
       var name = qS('#role-name-input').value.trim();
       var color = qS('#role-color-input').value;
       var permissions = getSelectedPermissions();
+      var hoist = qS('#role-hoist')?.checked || false;
+      var mentionable = qS('#role-mentionable')?.checked || false;
       
       if (!name) {
         showNotification('Введите название роли');
@@ -3770,9 +3913,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       if (state.editingRoleId) {
-        send({ type: 'update_role', serverId: state.editingServerId, roleId: state.editingRoleId, name: name, color: color, permissions: permissions, icon: state.roleIcon });
+        send({ type: 'update_role', serverId: state.editingServerId, roleId: state.editingRoleId, name: name, color: color, permissions: permissions, icon: state.roleIcon, hoist: hoist, mentionable: mentionable });
       } else {
-        send({ type: 'create_role', serverId: state.editingServerId, name: name, color: color, permissions: permissions, icon: state.roleIcon });
+        send({ type: 'create_role', serverId: state.editingServerId, name: name, color: color, permissions: permissions, icon: state.roleIcon, hoist: hoist, mentionable: mentionable });
       }
       closeModal('role-modal');
       showNotification('Роль сохранена');
