@@ -92,16 +92,29 @@
           </button>
         </div>
         <div class="sidebar-section">
-          <div class="section-title" data-category="text">
-            <span>Текстовые каналы</span>
-            <button class="add-btn" id="add-channel-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <div class="categories-header">
+            <span>Каналы</span>
+            <button class="add-btn" id="add-category-btn" title="Создать категорию"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
           </div>
-          <div id="channel-list"></div>
-          <div class="section-title" data-category="voice">
-            <span>Голосовые каналы</span>
-            <button class="add-btn" id="add-voice-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+          <div id="categories-list">
+            <div class="channel-category" data-category-id="text">
+              <div class="category-header">
+                <svg class="category-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                <span>Текстовые каналы</span>
+                <button class="add-btn" id="add-channel-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+              </div>
+              <div id="channel-list" class="category-channels"></div>
+            </div>
+            <div class="channel-category" data-category-id="voice">
+              <div class="category-header">
+                <svg class="category-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                <span>Голосовые каналы</span>
+                <button class="add-btn" id="add-voice-btn" title="Создать канал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+              </div>
+              <div id="voice-list" class="category-channels"></div>
+            </div>
           </div>
-          <div id="voice-list"></div>
+          <div id="custom-categories"></div>
         </div>
       </div>
 
@@ -591,6 +604,20 @@
     </div>
   </div>
 
+  <!-- Create Category Modal -->
+  <div class="modal" id="category-modal">
+    <div class="modal-box">
+      <div class="modal-header"><h2>Создать категорию</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="modal-content">
+        <div class="form-group">
+          <label>Название категории</label>
+          <input type="text" id="new-category-name" placeholder="Новая категория">
+        </div>
+        <button class="btn primary full" id="create-category-btn">Создать</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Server Settings Modal -->
   <div class="modal" id="server-settings-modal">
     <div class="modal-box xlarge">
@@ -1011,46 +1038,233 @@
 
   <!-- Edit Channel Modal -->
   <div class="modal" id="edit-channel-modal">
-    <div class="modal-box large">
-      <div class="modal-header"><h2>Настройки канала</h2><button class="close-btn" data-close>&times;</button></div>
-      <div class="settings-layout">
-        <div class="settings-nav">
-          <button class="settings-tab active" data-channel-settings="overview">Обзор</button>
-          <button class="settings-tab" data-channel-settings="permissions">Права доступа</button>
-          <div class="settings-nav-divider"></div>
-          <button class="settings-tab danger-tab" id="delete-channel-from-settings">Удалить канал</button>
+    <div class="modal-box xlarge">
+      <div class="modal-header"><h2 id="channel-modal-title">Настройки канала</h2><button class="close-btn" data-close>&times;</button></div>
+      <div class="role-modal-layout">
+        <div class="role-modal-nav">
+          <button class="channel-tab active" data-channel-tab="overview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Обзор
+          </button>
+          <button class="channel-tab" data-channel-tab="permissions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Права доступа
+          </button>
+          <div class="nav-divider"></div>
+          <button class="channel-tab danger-tab" id="delete-channel-from-settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Удалить канал
+          </button>
         </div>
-        <div class="settings-content">
-          <div class="settings-panel active" id="channel-settings-overview">
-            <h3>Обзор</h3>
+        <div class="role-modal-content">
+          <!-- Обзор -->
+          <div class="channel-panel active" id="channel-panel-overview">
+            <h3>Обзор канала</h3>
+            <p class="settings-hint">Основные настройки канала.</p>
+            
             <div class="form-group">
               <label>Название канала</label>
               <input type="text" id="edit-channel-name" placeholder="название-канала">
+              <span class="form-hint">Используйте только буквы, цифры и дефисы</span>
             </div>
-            <button class="btn primary" id="save-channel-settings">Сохранить</button>
+            
+            <div class="form-group">
+              <label>Описание канала</label>
+              <textarea id="edit-channel-topic" placeholder="О чём этот канал?" rows="3"></textarea>
+              <span class="form-hint">Описание отображается в заголовке канала</span>
+            </div>
+            
+            <div class="form-group" id="slowmode-group">
+              <label>Медленный режим</label>
+              <select id="edit-channel-slowmode">
+                <option value="0">Выключен</option>
+                <option value="5">5 секунд</option>
+                <option value="10">10 секунд</option>
+                <option value="30">30 секунд</option>
+                <option value="60">1 минута</option>
+                <option value="300">5 минут</option>
+              </select>
+              <span class="form-hint">Ограничивает частоту отправки сообщений</span>
+            </div>
           </div>
-          <div class="settings-panel" id="channel-settings-permissions">
+          
+          <!-- Права доступа -->
+          <div class="channel-panel" id="channel-panel-permissions">
             <h3>Права доступа</h3>
-            <p class="hint-text">Настройте кто может видеть и писать в этот канал.</p>
-            <div class="permissions-list">
-              <div class="permission-item">
+            <p class="settings-hint">Настройте права для ролей в этом канале.</p>
+            
+            <div class="channel-permissions-roles">
+              <div class="permissions-role-selector">
+                <label>Выберите роль</label>
+                <select id="channel-perm-role-select">
+                  <option value="everyone">@everyone</option>
+                </select>
+              </div>
+            </div>
+            
+            <!-- Текстовые права (показываются для текстовых каналов) -->
+            <div class="permission-category" id="text-channel-perms">
+              <div class="permission-category-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Текстовые права</span>
+              </div>
+              
+              <div class="permission-row">
                 <div class="permission-info">
-                  <span class="permission-name">@everyone</span>
-                  <span class="permission-desc">Все участники сервера</span>
+                  <span class="permission-name">Просмотр канала</span>
+                  <span class="permission-desc">Возможность видеть этот канал</span>
                 </div>
-                <div class="permission-toggles">
-                  <label class="toggle-label">
-                    <input type="checkbox" checked id="perm-everyone-view">
-                    <span>Просмотр</span>
-                  </label>
-                  <label class="toggle-label">
-                    <input type="checkbox" checked id="perm-everyone-send">
-                    <span>Отправка</span>
-                  </label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-view" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Отправка сообщений</span>
+                  <span class="permission-desc">Возможность писать сообщения</span>
                 </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-send" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Управление сообщениями</span>
+                  <span class="permission-desc">Удаление и закрепление сообщений</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-manage-messages">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Прикрепление файлов</span>
+                  <span class="permission-desc">Отправка изображений и файлов</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-attach" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Добавление реакций</span>
+                  <span class="permission-desc">Возможность ставить реакции</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-reactions" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Упоминание @everyone</span>
+                  <span class="permission-desc">Упоминание всех участников</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-mention-everyone">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            
+            <!-- Голосовые права (показываются для голосовых каналов) -->
+            <div class="permission-category" id="voice-channel-perms" style="display: none;">
+              <div class="permission-category-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                <span>Голосовые права</span>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Подключение</span>
+                  <span class="permission-desc">Возможность присоединяться к каналу</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-connect" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Говорить</span>
+                  <span class="permission-desc">Возможность говорить в канале</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-speak" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Видео</span>
+                  <span class="permission-desc">Возможность включать камеру</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-video" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Демонстрация экрана</span>
+                  <span class="permission-desc">Возможность транслировать экран</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-stream" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Отключать микрофон</span>
+                  <span class="permission-desc">Отключать микрофон другим участникам</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-mute-members">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Отключать звук</span>
+                  <span class="permission-desc">Отключать звук другим участникам</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-deafen-members">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              
+              <div class="permission-row">
+                <div class="permission-info">
+                  <span class="permission-name">Перемещать участников</span>
+                  <span class="permission-desc">Перемещать между каналами</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="ch-perm-move-members">
+                  <span class="toggle-slider"></span>
+                </label>
               </div>
             </div>
           </div>
+        </div>
+        <div class="role-modal-footer">
+          <button class="btn secondary" data-close>Отмена</button>
+          <button class="btn primary" id="save-channel-settings">Сохранить</button>
         </div>
       </div>
     </div>
@@ -1069,14 +1283,6 @@
           <button class="role-tab" data-role-tab="permissions">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             Права доступа
-          </button>
-          <button class="role-tab" data-role-tab="text">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            Текстовые каналы
-          </button>
-          <button class="role-tab" data-role-tab="voice">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-            Голосовые каналы
           </button>
         </div>
         <div class="role-modal-content">
@@ -1229,208 +1435,6 @@
                 </div>
                 <label class="toggle-switch">
                   <input type="checkbox" id="perm-manage-server">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Текстовые каналы -->
-          <div class="role-panel" id="role-panel-text">
-            <h3>Права в текстовых каналах</h3>
-            <p class="settings-hint">Настройте разрешения для текстовых каналов.</p>
-            
-            <div class="permission-category">
-              <div class="permission-category-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Текстовые каналы</span>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Просмотр каналов</span>
-                  <span class="permission-desc">Возможность видеть текстовые каналы</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-view-channels" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Отправка сообщений</span>
-                  <span class="permission-desc">Возможность писать сообщения в текстовых каналах</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-send-messages" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Управление сообщениями</span>
-                  <span class="permission-desc">Удаление и закрепление сообщений других участников</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-manage-messages">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Прикрепление файлов</span>
-                  <span class="permission-desc">Возможность отправлять изображения и файлы</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-attach-files" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Добавление реакций</span>
-                  <span class="permission-desc">Возможность добавлять реакции к сообщениям</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-add-reactions" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Упоминание @everyone</span>
-                  <span class="permission-desc">Возможность упоминать всех участников сервера</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-mention-everyone">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Читать историю сообщений</span>
-                  <span class="permission-desc">Просмотр сообщений, отправленных до присоединения</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-read-history" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Тайм-аут участников</span>
-                  <span class="permission-desc">Временно запретить участникам отправлять сообщения</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-timeout-members">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Голосовые каналы -->
-          <div class="role-panel" id="role-panel-voice">
-            <h3>Права в голосовых каналах</h3>
-            <p class="settings-hint">Настройте разрешения для голосовых каналов.</p>
-            
-            <div class="permission-category">
-              <div class="permission-category-header">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-                <span>Голосовые каналы</span>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Подключение к каналам</span>
-                  <span class="permission-desc">Возможность присоединяться к голосовым каналам</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-connect" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Говорить</span>
-                  <span class="permission-desc">Возможность говорить в голосовых каналах</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-speak" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Видео</span>
-                  <span class="permission-desc">Возможность включать камеру в голосовых каналах</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-video" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Демонстрация экрана</span>
-                  <span class="permission-desc">Возможность транслировать экран</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-stream" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Отключать участников</span>
-                  <span class="permission-desc">Возможность отключать микрофон другим участникам</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-mute-members">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Отключать звук участникам</span>
-                  <span class="permission-desc">Возможность отключать звук (deafen) другим участникам</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-deafen-members">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Перемещать участников</span>
-                  <span class="permission-desc">Возможность перемещать участников между каналами</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-move-members">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              
-              <div class="permission-row">
-                <div class="permission-info">
-                  <span class="permission-name">Приоритетный режим</span>
-                  <span class="permission-desc">Голос будет громче при активации режима</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="perm-voice-priority">
                   <span class="toggle-slider"></span>
                 </label>
               </div>

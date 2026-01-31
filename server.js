@@ -946,13 +946,13 @@ const handlers = {
 
 
   create_channel(ws, data) {
-    const { serverId, name, isVoice, isTemporary } = data;
+    const { serverId, name, isVoice, isTemporary, categoryId } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageChannel(serverId, userId)) return;
     
     const channelId = genId('ch');
-    const channel = { id: channelId, name: name || 'новый-канал', isTemporary: isTemporary || false };
+    const channel = { id: channelId, name: name || 'новый-канал', isTemporary: isTemporary || false, categoryId: categoryId || null };
     
     if (isVoice) {
       srv.voiceChannels.push(channel);
@@ -963,6 +963,53 @@ const handlers = {
     saveAll();
     
     broadcastToServer(serverId, { type: 'channel_created', serverId, channel, isVoice });
+  },
+
+  create_category(ws, data) {
+    const { serverId, name } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageChannel(serverId, userId)) return;
+    
+    if (!srv.categories) srv.categories = [];
+    
+    const categoryId = genId('cat');
+    const category = { id: categoryId, name: name || 'Новая категория', position: srv.categories.length };
+    srv.categories.push(category);
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'category_created', serverId, category });
+  },
+
+  update_category(ws, data) {
+    const { serverId, categoryId, name } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageChannel(serverId, userId)) return;
+    
+    if (!srv.categories) return;
+    const cat = srv.categories.find(c => c.id === categoryId);
+    if (cat && name) {
+      cat.name = name;
+      saveAll();
+      broadcastToServer(serverId, { type: 'category_updated', serverId, categoryId, name });
+    }
+  },
+
+  delete_category(ws, data) {
+    const { serverId, categoryId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageChannel(serverId, userId)) return;
+    
+    if (!srv.categories) return;
+    srv.categories = srv.categories.filter(c => c.id !== categoryId);
+    // Move channels from this category to uncategorized
+    srv.channels.forEach(ch => { if (ch.categoryId === categoryId) ch.categoryId = null; });
+    srv.voiceChannels.forEach(ch => { if (ch.categoryId === categoryId) ch.categoryId = null; });
+    saveAll();
+    
+    broadcastToServer(serverId, { type: 'category_deleted', serverId, categoryId });
   },
 
   update_channel(ws, data) {

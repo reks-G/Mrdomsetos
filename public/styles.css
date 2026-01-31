@@ -2421,8 +2421,33 @@ body::before {
 
 /* Role Badge */
 .role-badge {
-  font-size: 10px; padding: 2px 6px; border-radius: var(--radius-full);
-  background: var(--bg-glass); margin-left: 6px;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(153, 170, 181, 0.15);
+  border: 1px solid rgba(153, 170, 181, 0.3);
+  margin-left: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.member-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.member-item:hover {
+  background: var(--bg-glass);
 }
 
 
@@ -4196,4 +4221,149 @@ textarea:focus {
   letter-spacing: 0.5px;
   padding: 8px 12px;
   margin-bottom: 4px;
+}
+
+
+/* Channel settings tabs */
+.channel-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  text-align: left;
+}
+
+.channel-tab svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+
+.channel-tab:hover {
+  background: var(--bg-glass);
+  color: var(--text-primary);
+}
+
+.channel-tab.active {
+  background: var(--bg-glass-active);
+  color: var(--text-primary);
+}
+
+.channel-tab.active svg {
+  opacity: 1;
+}
+
+.channel-tab.danger-tab {
+  color: var(--danger);
+}
+
+.channel-tab.danger-tab:hover {
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.channel-panel {
+  display: none;
+}
+
+.channel-panel.active {
+  display: block;
+}
+
+.nav-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+
+/* Channel permissions role selector */
+.permissions-role-selector {
+  margin-bottom: 20px;
+}
+
+.permissions-role-selector select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+
+/* Channel Categories */
+.categories-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.channel-category {
+  margin-bottom: 8px;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.category-header:hover {
+  background: var(--bg-glass);
+}
+
+.category-header span {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.category-arrow {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.channel-category.collapsed .category-arrow {
+  transform: rotate(-90deg);
+}
+
+.channel-category.collapsed .category-channels {
+  display: none;
+}
+
+.category-channels {
+  padding-left: 8px;
+}
+
+.category-header .add-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.category-header:hover .add-btn {
+  opacity: 1;
 }
