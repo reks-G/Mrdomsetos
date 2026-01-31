@@ -3783,8 +3783,8 @@ textarea:focus {
 .toggle-switch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 24px;
+  width: 52px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -3801,29 +3801,36 @@ textarea:focus {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-tertiary);
-  border-radius: 24px;
-  transition: all 0.3s;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 28px;
+  transition: all 0.3s ease;
 }
 
 .toggle-slider::before {
   position: absolute;
   content: "";
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 3px;
+  height: 22px;
+  width: 22px;
+  left: 2px;
+  bottom: 2px;
   background: white;
   border-radius: 50%;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-switch input:checked + .toggle-slider {
   background: var(--success);
+  border-color: var(--success);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(20px);
+  transform: translateX(24px);
+}
+
+.toggle-switch:hover .toggle-slider {
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .toggle-switch input:focus + .toggle-slider {
@@ -3833,4 +3840,5 @@ textarea:focus {
 /* Danger permission toggle */
 .permission-row.danger-perm .toggle-switch input:checked + .toggle-slider {
   background: var(--danger);
+  border-color: var(--danger);
 }
