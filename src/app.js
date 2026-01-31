@@ -583,7 +583,31 @@ function handleMessage(msg) {
       var srv = state.servers.get(msg.serverId);
       if (srv) srv.membersData = msg.members;
       if (state.currentServer === msg.serverId) renderMembers();
-      if (state.editingServerId === msg.serverId) renderServerMembersList();
+      if (state.editingServerId === msg.serverId) {
+        renderServerMembersList();
+        // Also update people list if that tab is open
+        if (typeof renderPeopleList === 'function') {
+          renderPeopleList(msg.members);
+        }
+      }
+    },
+    
+    invites_list: function() {
+      if (state.editingServerId === msg.serverId && typeof renderInvitesList === 'function') {
+        renderInvitesList(msg.invites);
+      }
+    },
+    
+    audit_log: function() {
+      if (state.editingServerId === msg.serverId && typeof renderAuditLog === 'function') {
+        renderAuditLog(msg.entries);
+      }
+    },
+    
+    bans_list: function() {
+      if (state.editingServerId === msg.serverId && typeof renderBansList === 'function') {
+        renderBansList(msg.bans);
+      }
     },
     
     member_joined: function() {
@@ -3041,10 +3065,28 @@ document.addEventListener('DOMContentLoaded', function() {
       var srv = state.servers.get(state.editingServerId);
       if (srv) {
         qS('#edit-server-name').value = srv.name;
+        var descEl = qS('#edit-server-description');
+        if (descEl) descEl.value = srv.description || '';
         var icon = qS('#edit-server-icon');
-        if (srv.icon) icon.innerHTML = '<img src="' + srv.icon + '">';
-        else icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+        if (srv.icon) {
+          icon.innerHTML = '<img src="' + srv.icon + '"><div class="avatar-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span>Изменить</span></div>';
+          icon.classList.add('has-image');
+        } else {
+          icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div class="avatar-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span>Изменить</span></div>';
+          icon.classList.remove('has-image');
+        }
+        // Set privacy radio
+        var privacyRadios = qSA('input[name="server-privacy"]');
+        privacyRadios.forEach(function(r) {
+          r.checked = r.value === (srv.privacy || 'public');
+        });
       }
+      // Reset to first tab
+      qSA('[data-server-settings]').forEach(function(t) { t.classList.remove('active'); });
+      qS('[data-server-settings="profile"]').classList.add('active');
+      qSA('#server-settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      qS('#server-settings-profile').classList.add('active');
+      
       openModal('server-settings-modal');
       send({ type: 'get_server_members', serverId: state.editingServerId });
       renderRoles();
@@ -3216,8 +3258,20 @@ document.addEventListener('DOMContentLoaded', function() {
   // Server settings
   qS('#save-server-settings').onclick = function() {
     var name = qS('#edit-server-name').value.trim();
+    var description = qS('#edit-server-description')?.value.trim() || '';
+    var privacyRadio = qS('input[name="server-privacy"]:checked');
+    var privacy = privacyRadio ? privacyRadio.value : 'public';
+    
     if (name && state.editingServerId) {
-      send({ type: 'update_server', serverId: state.editingServerId, name: name, icon: state.editServerIcon });
+      send({ 
+        type: 'update_server', 
+        serverId: state.editingServerId, 
+        name: name, 
+        icon: state.editServerIcon,
+        description: description,
+        privacy: privacy
+      });
+      showNotification('Настройки сохранены');
     }
   };
   
@@ -3726,6 +3780,546 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
   
+  // ============ EXTENDED SERVER SETTINGS ============
+  
+  // Server settings tabs handler (extended)
+  qSA('[data-server-settings]').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('[data-server-settings]').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('#server-settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#server-settings-' + tab.dataset.serverSettings);
+      if (panel) panel.classList.add('active');
+      
+      // Load data for specific tabs
+      var tabName = tab.dataset.serverSettings;
+      if (tabName === 'people' || tabName === 'members') {
+        loadServerPeople();
+      } else if (tabName === 'invites') {
+        loadServerInvites();
+      } else if (tabName === 'audit') {
+        loadAuditLog();
+      } else if (tabName === 'bans') {
+        loadServerBans();
+      }
+    };
+  });
+  
+  // Remove server icon
+  var removeServerIconBtn = qS('#remove-server-icon');
+  if (removeServerIconBtn) {
+    removeServerIconBtn.onclick = function() {
+      state.editServerIcon = null;
+      var icon = qS('#edit-server-icon');
+      icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><div class="avatar-overlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span>Изменить</span></div>';
+      icon.classList.remove('has-image');
+    };
+  }
+  
+  // Upload areas click handlers
+  var emojiUploadArea = qS('#emoji-upload-area');
+  if (emojiUploadArea) {
+    emojiUploadArea.onclick = function() {
+      qS('#emoji-upload-input').click();
+    };
+  }
+  
+  var stickerUploadArea = qS('#sticker-upload-area');
+  if (stickerUploadArea) {
+    stickerUploadArea.onclick = function() {
+      qS('#sticker-upload-input').click();
+    };
+  }
+  
+  var reactionUploadArea = qS('#reaction-upload-area');
+  if (reactionUploadArea) {
+    reactionUploadArea.onclick = function() {
+      qS('#reaction-upload-input').click();
+    };
+  }
+  
+  // Emoji upload handler
+  var emojiUploadInput = qS('#emoji-upload-input');
+  if (emojiUploadInput) {
+    emojiUploadInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 256 * 1024) {
+        showNotification('Файл слишком большой (макс. 256KB)');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var emojiName = prompt('Введите название эмодзи:', file.name.split('.')[0]);
+        if (emojiName) {
+          send({ 
+            type: 'add_emoji', 
+            serverId: state.editingServerId, 
+            name: emojiName, 
+            image: ev.target.result 
+          });
+          showNotification('Эмодзи добавлен');
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+  }
+  
+  // Sticker upload handler
+  var stickerUploadInput = qS('#sticker-upload-input');
+  if (stickerUploadInput) {
+    stickerUploadInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 512 * 1024) {
+        showNotification('Файл слишком большой (макс. 512KB)');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var stickerName = prompt('Введите название стикера:', file.name.split('.')[0]);
+        if (stickerName) {
+          var category = prompt('Категория (memes, emotions, custom):', 'custom');
+          send({ 
+            type: 'add_sticker', 
+            serverId: state.editingServerId, 
+            name: stickerName, 
+            category: category || 'custom',
+            image: ev.target.result 
+          });
+          showNotification('Стикер добавлен');
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+  }
+  
+  // Reaction upload handler
+  var reactionUploadInput = qS('#reaction-upload-input');
+  if (reactionUploadInput) {
+    reactionUploadInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 128 * 1024) {
+        showNotification('Файл слишком большой (макс. 128KB)');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var reactionName = prompt('Введите название реакции:', file.name.split('.')[0]);
+        if (reactionName) {
+          send({ 
+            type: 'add_custom_reaction', 
+            serverId: state.editingServerId, 
+            name: reactionName, 
+            image: ev.target.result 
+          });
+          showNotification('Реакция добавлена');
+          loadCustomReactions();
+        }
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    };
+  }
+  
+  // Create invite button in settings
+  var createInviteBtn = qS('#create-invite-btn');
+  if (createInviteBtn) {
+    createInviteBtn.onclick = function() {
+      send({ type: 'create_invite', serverId: state.editingServerId });
+    };
+  }
+  
+  // Transfer ownership button
+  var transferOwnershipBtn = qS('#transfer-ownership-btn');
+  if (transferOwnershipBtn) {
+    transferOwnershipBtn.onclick = function() {
+      showNotification('Функция передачи владения в разработке');
+    };
+  }
+  
+  // People search
+  var peopleSearch = qS('#people-search');
+  if (peopleSearch) {
+    peopleSearch.oninput = function() {
+      filterPeopleList(peopleSearch.value);
+    };
+  }
+  
+  // People filters
+  var peopleRoleFilter = qS('#people-role-filter');
+  if (peopleRoleFilter) {
+    peopleRoleFilter.onchange = function() {
+      filterPeopleList(qS('#people-search').value);
+    };
+  }
+  
+  var peopleStatusFilter = qS('#people-status-filter');
+  if (peopleStatusFilter) {
+    peopleStatusFilter.onchange = function() {
+      filterPeopleList(qS('#people-search').value);
+    };
+  }
+  
+  // Bans search
+  var bansSearchInput = qS('#bans-search-input');
+  if (bansSearchInput) {
+    bansSearchInput.oninput = function() {
+      filterBansList(bansSearchInput.value);
+    };
+  }
+  
+  // Audit filters
+  var auditActionFilter = qS('#audit-action-filter');
+  if (auditActionFilter) {
+    auditActionFilter.onchange = function() {
+      filterAuditLog();
+    };
+  }
+  
+  var auditUserFilter = qS('#audit-user-filter');
+  if (auditUserFilter) {
+    auditUserFilter.onchange = function() {
+      filterAuditLog();
+    };
+  }
+  
+  // Sticker categories
+  qSA('.category-btn').forEach(function(btn) {
+    btn.onclick = function() {
+      qSA('.category-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      filterStickers(btn.dataset.category);
+    };
+  });
+  
+  // Helper functions for server settings
+  function loadServerPeople() {
+    var srv = state.servers.get(state.editingServerId);
+    if (!srv) return;
+    
+    send({ type: 'get_server_members', serverId: state.editingServerId });
+    
+    // Update stats
+    var members = srv.membersData || [];
+    var online = members.filter(function(m) { return m.status === 'online'; });
+    
+    var totalEl = qS('#total-members-count');
+    var onlineEl = qS('#online-members-count');
+    var newEl = qS('#new-members-count');
+    
+    if (totalEl) totalEl.textContent = members.length;
+    if (onlineEl) onlineEl.textContent = online.length;
+    if (newEl) newEl.textContent = '0'; // Would need join date tracking
+    
+    // Populate role filter
+    var roleFilter = qS('#people-role-filter');
+    if (roleFilter && srv.roles) {
+      roleFilter.innerHTML = '<option value="all">Все роли</option>';
+      srv.roles.forEach(function(role) {
+        roleFilter.innerHTML += '<option value="' + role.id + '">' + escapeHtml(role.name) + '</option>';
+      });
+    }
+    
+    renderPeopleList(members);
+  }
+  
+  function renderPeopleList(members) {
+    var list = qS('#people-list');
+    if (!list) return;
+    
+    if (!members || members.length === 0) {
+      list.innerHTML = '<div class="empty-state">Нет участников</div>';
+      return;
+    }
+    
+    var h = '';
+    members.forEach(function(m) {
+      var statusClass = m.status === 'online' ? 'online' : '';
+      h += '<div class="person-item" data-id="' + m.id + '" data-role="' + (m.role || 'default') + '" data-status="' + m.status + '">';
+      h += '<div class="avatar ' + statusClass + '">' + (m.avatar ? '<img src="' + m.avatar + '">' : (m.name ? m.name.charAt(0).toUpperCase() : '?')) + '</div>';
+      h += '<div class="person-info">';
+      h += '<div class="person-name">' + escapeHtml(m.name || 'User') + '</div>';
+      h += '<div class="person-role">' + escapeHtml(m.role || 'Участник') + '</div>';
+      h += '</div>';
+      h += '<div class="person-joined">Присоединился недавно</div>';
+      h += '</div>';
+    });
+    
+    list.innerHTML = h;
+    
+    // Click handler for people items
+    list.querySelectorAll('.person-item').forEach(function(item) {
+      item.onclick = function() {
+        openMemberModal(item.dataset.id);
+      };
+    });
+  }
+  
+  function filterPeopleList(query) {
+    var items = qSA('#people-list .person-item');
+    var roleFilter = qS('#people-role-filter').value;
+    var statusFilter = qS('#people-status-filter').value;
+    
+    items.forEach(function(item) {
+      var name = item.querySelector('.person-name').textContent.toLowerCase();
+      var role = item.dataset.role;
+      var status = item.dataset.status;
+      
+      var matchesQuery = !query || name.includes(query.toLowerCase());
+      var matchesRole = roleFilter === 'all' || role === roleFilter;
+      var matchesStatus = statusFilter === 'all' || status === statusFilter;
+      
+      item.style.display = (matchesQuery && matchesRole && matchesStatus) ? 'flex' : 'none';
+    });
+  }
+  
+  function loadServerInvites() {
+    send({ type: 'get_invites', serverId: state.editingServerId });
+  }
+  
+  function renderInvitesList(invites) {
+    var list = qS('#invites-list');
+    if (!list) return;
+    
+    if (!invites || Object.keys(invites).length === 0) {
+      list.innerHTML = '<div class="empty-state">Активных приглашений нет</div>';
+      return;
+    }
+    
+    var h = '';
+    Object.entries(invites).forEach(function(entry) {
+      var code = entry[0];
+      var data = entry[1];
+      h += '<div class="invite-item" data-code="' + code + '">';
+      h += '<div class="invite-info">';
+      h += '<div class="invite-code">' + code + '</div>';
+      h += '<div class="invite-meta">Создан: ' + (data.createdBy || 'Неизвестно') + '</div>';
+      h += '</div>';
+      h += '<div class="invite-actions">';
+      h += '<button class="btn secondary copy-invite-btn">Копировать</button>';
+      h += '<button class="btn danger-outline delete-invite-btn">Удалить</button>';
+      h += '</div>';
+      h += '</div>';
+    });
+    
+    list.innerHTML = h;
+    
+    // Bind handlers
+    list.querySelectorAll('.copy-invite-btn').forEach(function(btn) {
+      btn.onclick = function() {
+        var code = btn.closest('.invite-item').dataset.code;
+        navigator.clipboard.writeText(code);
+        showNotification('Код скопирован');
+      };
+    });
+    
+    list.querySelectorAll('.delete-invite-btn').forEach(function(btn) {
+      btn.onclick = function() {
+        var code = btn.closest('.invite-item').dataset.code;
+        send({ type: 'delete_invite', serverId: state.editingServerId, code: code });
+        btn.closest('.invite-item').remove();
+        showNotification('Приглашение удалено');
+      };
+    });
+  }
+  
+  function loadAuditLog() {
+    send({ type: 'get_audit_log', serverId: state.editingServerId });
+  }
+  
+  function renderAuditLog(entries) {
+    var log = qS('#audit-log');
+    if (!log) return;
+    
+    if (!entries || entries.length === 0) {
+      log.innerHTML = '<div class="empty-state">Журнал аудита пуст</div>';
+      return;
+    }
+    
+    var h = '';
+    entries.forEach(function(entry) {
+      var iconClass = '';
+      var iconSvg = '';
+      
+      switch(entry.action) {
+        case 'member_join':
+          iconClass = 'join';
+          iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+          break;
+        case 'member_leave':
+        case 'member_kick':
+        case 'member_ban':
+          iconClass = 'leave';
+          iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>';
+          break;
+        default:
+          iconClass = 'update';
+          iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+      }
+      
+      h += '<div class="audit-entry" data-action="' + entry.action + '" data-user="' + (entry.userId || '') + '">';
+      h += '<div class="audit-icon ' + iconClass + '">' + iconSvg + '</div>';
+      h += '<div class="audit-content">';
+      h += '<div class="audit-action">' + escapeHtml(entry.description || entry.action) + '</div>';
+      h += '<div class="audit-time">' + formatTime(entry.time) + '</div>';
+      h += '</div>';
+      h += '</div>';
+    });
+    
+    log.innerHTML = h;
+  }
+  
+  function filterAuditLog() {
+    var actionFilter = qS('#audit-action-filter').value;
+    var userFilter = qS('#audit-user-filter').value;
+    
+    var entries = qSA('#audit-log .audit-entry');
+    entries.forEach(function(entry) {
+      var action = entry.dataset.action;
+      var user = entry.dataset.user;
+      
+      var matchesAction = actionFilter === 'all' || action === actionFilter;
+      var matchesUser = userFilter === 'all' || user === userFilter;
+      
+      entry.style.display = (matchesAction && matchesUser) ? 'flex' : 'none';
+    });
+  }
+  
+  function loadServerBans() {
+    send({ type: 'get_bans', serverId: state.editingServerId });
+  }
+  
+  function renderBansList(bans) {
+    var list = qS('#bans-list');
+    if (!list) return;
+    
+    if (!bans || bans.length === 0) {
+      list.innerHTML = '<div class="empty-state">Нет забаненных пользователей</div>';
+      return;
+    }
+    
+    var h = '';
+    bans.forEach(function(ban) {
+      h += '<div class="ban-item" data-id="' + ban.id + '">';
+      h += '<div class="avatar">' + (ban.name ? ban.name.charAt(0).toUpperCase() : '?') + '</div>';
+      h += '<div class="ban-info">';
+      h += '<div class="ban-name">' + escapeHtml(ban.name || 'Пользователь') + '</div>';
+      h += '<div class="ban-reason">' + escapeHtml(ban.reason || 'Причина не указана') + '</div>';
+      h += '</div>';
+      h += '<div class="ban-date">' + formatDate(ban.date || Date.now()) + '</div>';
+      h += '<button class="btn secondary unban-btn">Разбанить</button>';
+      h += '</div>';
+    });
+    
+    list.innerHTML = h;
+    
+    // Bind unban handlers
+    list.querySelectorAll('.unban-btn').forEach(function(btn) {
+      btn.onclick = function() {
+        var id = btn.closest('.ban-item').dataset.id;
+        send({ type: 'unban_member', serverId: state.editingServerId, memberId: id });
+        btn.closest('.ban-item').remove();
+        showNotification('Пользователь разбанен');
+      };
+    });
+  }
+  
+  function filterBansList(query) {
+    var items = qSA('#bans-list .ban-item');
+    items.forEach(function(item) {
+      var name = item.querySelector('.ban-name').textContent.toLowerCase();
+      item.style.display = (!query || name.includes(query.toLowerCase())) ? 'flex' : 'none';
+    });
+  }
+  
+  function loadCustomReactions() {
+    var list = qS('#custom-reactions-list');
+    if (!list) return;
+    
+    var srv = state.servers.get(state.editingServerId);
+    var reactions = srv?.customReactions || [];
+    
+    if (reactions.length === 0) {
+      list.innerHTML = '<div class="empty-state small">Пользовательские реакции не добавлены</div>';
+      return;
+    }
+    
+    var h = '';
+    reactions.forEach(function(r) {
+      h += '<div class="custom-reaction-item" data-name="' + r.name + '">';
+      h += '<img src="' + r.image + '" alt="' + escapeHtml(r.name) + '">';
+      h += '<span>:' + escapeHtml(r.name) + ':</span>';
+      h += '<button class="delete-btn" title="Удалить">×</button>';
+      h += '</div>';
+    });
+    
+    list.innerHTML = h;
+    
+    list.querySelectorAll('.delete-btn').forEach(function(btn) {
+      btn.onclick = function() {
+        var name = btn.closest('.custom-reaction-item').dataset.name;
+        send({ type: 'remove_custom_reaction', serverId: state.editingServerId, name: name });
+        btn.closest('.custom-reaction-item').remove();
+      };
+    });
+  }
+  
+  function filterStickers(category) {
+    var items = qSA('#server-stickers-grid .sticker-item');
+    items.forEach(function(item) {
+      var itemCategory = item.dataset.category;
+      item.style.display = (category === 'all' || itemCategory === category) ? 'flex' : 'none';
+    });
+  }
+  
+  function openMemberModal(memberId) {
+    state.editingMemberId = memberId;
+    var srv = state.servers.get(state.editingServerId);
+    if (!srv) return;
+    
+    var member = (srv.membersData || []).find(function(m) { return m.id === memberId; });
+    if (!member) return;
+    
+    var avatar = qS('#member-modal-avatar');
+    var name = qS('#member-modal-name');
+    var roleSelect = qS('#member-role-select');
+    
+    if (avatar) {
+      if (member.avatar) {
+        avatar.innerHTML = '<img src="' + member.avatar + '">';
+      } else {
+        avatar.textContent = member.name ? member.name.charAt(0).toUpperCase() : '?';
+      }
+    }
+    
+    if (name) name.textContent = member.name || 'Участник';
+    
+    if (roleSelect && srv.roles) {
+      roleSelect.innerHTML = '';
+      srv.roles.forEach(function(role) {
+        var selected = member.role === role.id ? ' selected' : '';
+        roleSelect.innerHTML += '<option value="' + role.id + '"' + selected + '>' + escapeHtml(role.name) + '</option>';
+      });
+    }
+    
+    // Hide kick/ban for owner
+    var kickBtn = qS('#kick-member-btn');
+    var banBtn = qS('#ban-member-btn');
+    if (member.isOwner) {
+      if (kickBtn) kickBtn.style.display = 'none';
+      if (banBtn) banBtn.style.display = 'none';
+    } else {
+      if (kickBtn) kickBtn.style.display = '';
+      if (banBtn) banBtn.style.display = '';
+    }
+    
+    openModal('member-modal');
+  }
+
   // Connect
   connect();
 });

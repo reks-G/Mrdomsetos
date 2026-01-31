@@ -365,6 +365,26 @@ function canManageRoles(serverId, userId) {
   return hasPermission(serverId, userId, 'manage_roles');
 }
 
+// Audit log helper
+function addAuditEntry(serverId, userId, action, description) {
+  const srv = servers.get(serverId);
+  if (!srv) return;
+  
+  if (!srv.auditLog) srv.auditLog = [];
+  srv.auditLog.unshift({
+    id: genId('audit'),
+    userId,
+    action,
+    description,
+    time: Date.now()
+  });
+  
+  // Keep only last 100 entries
+  if (srv.auditLog.length > 100) {
+    srv.auditLog = srv.auditLog.slice(0, 100);
+  }
+}
+
 // ============ HTTP SERVER ============
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -839,7 +859,7 @@ const handlers = {
   },
 
   update_server(ws, data) {
-    const { serverId, name, icon, region } = data;
+    const { serverId, name, icon, region, description, privacy } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || srv.ownerId !== userId) return;
@@ -847,8 +867,11 @@ const handlers = {
     if (name) srv.name = name;
     if (icon !== undefined) srv.icon = icon;
     if (region) srv.region = region;
+    if (description !== undefined) srv.description = description;
+    if (privacy) srv.privacy = privacy;
     saveAll();
     
+    addAuditEntry(serverId, userId, 'server_update', 'Настройки сервера обновлены');
     broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon, region: srv.region });
   },
 
@@ -1513,6 +1536,128 @@ const handlers = {
       saveAll();
       sendToUser(targetId, { type: 'dm', message: dmMsg, sender: getUserData(userId) });
       send(ws, { type: 'dm_sent', to: targetId, message: dmMsg });
+    }
+  },
+
+  // Get invites list
+  get_invites(ws, data) {
+    const { serverId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    send(ws, { type: 'invites_list', serverId, invites: srv.invites || {} });
+  },
+
+  // Delete invite
+  delete_invite(ws, data) {
+    const { serverId, code } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    if (srv.invites && srv.invites[code]) {
+      delete srv.invites[code];
+      saveAll();
+    }
+  },
+
+  // Get audit log
+  get_audit_log(ws, data) {
+    const { serverId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    // Return audit log entries (stored in server or generate sample)
+    const entries = srv.auditLog || [];
+    send(ws, { type: 'audit_log', serverId, entries });
+  },
+
+  // Get bans list
+  get_bans(ws, data) {
+    const { serverId } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    const bans = [];
+    if (srv.bans) {
+      srv.bans.forEach(bannedId => {
+        const acc = getAccountById(bannedId);
+        bans.push({
+          id: bannedId,
+          name: acc?.name || 'Пользователь',
+          reason: srv.banReasons?.[bannedId] || null,
+          date: srv.banDates?.[bannedId] || Date.now()
+        });
+      });
+    }
+    
+    send(ws, { type: 'bans_list', serverId, bans });
+  },
+
+  // Add emoji
+  add_emoji(ws, data) {
+    const { serverId, name, image } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    if (!srv.customEmoji) srv.customEmoji = [];
+    if (srv.customEmoji.length >= 50) {
+      send(ws, { type: 'error', message: 'Достигнут лимит эмодзи' });
+      return;
+    }
+    
+    srv.customEmoji.push({ name, image, addedBy: userId, addedAt: Date.now() });
+    saveAll();
+    
+    // Add to audit log
+    addAuditEntry(serverId, userId, 'emoji_add', `Добавлен эмодзи :${name}:`);
+  },
+
+  // Add sticker
+  add_sticker(ws, data) {
+    const { serverId, name, category, image } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    if (!srv.stickers) srv.stickers = [];
+    if (srv.stickers.length >= 15) {
+      send(ws, { type: 'error', message: 'Достигнут лимит стикеров' });
+      return;
+    }
+    
+    srv.stickers.push({ name, category: category || 'custom', image, addedBy: userId, addedAt: Date.now() });
+    saveAll();
+    
+    addAuditEntry(serverId, userId, 'sticker_add', `Добавлен стикер ${name}`);
+  },
+
+  // Add custom reaction
+  add_custom_reaction(ws, data) {
+    const { serverId, name, image } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    if (!srv.customReactions) srv.customReactions = [];
+    srv.customReactions.push({ name, image, addedBy: userId });
+    saveAll();
+  },
+
+  // Remove custom reaction
+  remove_custom_reaction(ws, data) {
+    const { serverId, name } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || srv.ownerId !== userId) return;
+    
+    if (srv.customReactions) {
+      srv.customReactions = srv.customReactions.filter(r => r.name !== name);
+      saveAll();
     }
   }
 };
