@@ -3654,16 +3654,106 @@ document.addEventListener('DOMContentLoaded', function() {
       qS('#role-modal-title').textContent = 'Создать роль';
       qS('#role-name-input').value = '';
       qS('#role-color-input').value = '#99aab5';
+      var hexInput = qS('#role-color-hex');
+      if (hexInput) hexInput.value = '#99aab5';
       qS('#role-color-preview').style.background = '#99aab5';
+      // Reset color presets
+      qSA('.color-preset').forEach(function(p) { p.classList.remove('active'); });
+      var defaultPreset = qS('.color-preset[data-color="#99aab5"]');
+      if (defaultPreset) defaultPreset.classList.add('active');
+      // Reset role icon
+      var iconPreview = qS('#role-icon-preview');
+      if (iconPreview) {
+        iconPreview.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      }
+      state.roleIcon = null;
+      // Reset to first tab
+      qSA('.role-tab').forEach(function(t) { t.classList.remove('active'); });
+      qS('.role-tab[data-role-tab="general"]').classList.add('active');
+      qSA('.role-panel').forEach(function(p) { p.classList.remove('active'); });
+      qS('#role-panel-general').classList.add('active');
       resetPermissionCheckboxes();
       openModal('role-modal');
     };
   }
   
+  // Role tabs
+  qSA('.role-tab').forEach(function(tab) {
+    tab.onclick = function() {
+      qSA('.role-tab').forEach(function(t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      qSA('.role-panel').forEach(function(p) { p.classList.remove('active'); });
+      var panel = qS('#role-panel-' + tab.dataset.roleTab);
+      if (panel) panel.classList.add('active');
+    };
+  });
+  
+  // Color presets
+  qSA('.color-preset').forEach(function(preset) {
+    preset.onclick = function() {
+      var color = preset.dataset.color;
+      qSA('.color-preset').forEach(function(p) { p.classList.remove('active'); });
+      preset.classList.add('active');
+      qS('#role-color-input').value = color;
+      var hexInput = qS('#role-color-hex');
+      if (hexInput) hexInput.value = color;
+      qS('#role-color-preview').style.background = color;
+    };
+  });
+  
   var roleColorInput = qS('#role-color-input');
   if (roleColorInput) {
     roleColorInput.oninput = function() {
-      qS('#role-color-preview').style.background = roleColorInput.value;
+      var color = roleColorInput.value;
+      qS('#role-color-preview').style.background = color;
+      var hexInput = qS('#role-color-hex');
+      if (hexInput) hexInput.value = color;
+      qSA('.color-preset').forEach(function(p) { 
+        p.classList.toggle('active', p.dataset.color === color);
+      });
+    };
+  }
+  
+  var roleColorHex = qS('#role-color-hex');
+  if (roleColorHex) {
+    roleColorHex.oninput = function() {
+      var color = roleColorHex.value;
+      if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+        qS('#role-color-input').value = color;
+        qS('#role-color-preview').style.background = color;
+        qSA('.color-preset').forEach(function(p) { 
+          p.classList.toggle('active', p.dataset.color === color);
+        });
+      }
+    };
+  }
+  
+  // Role icon upload
+  var uploadRoleIconBtn = qS('#upload-role-icon');
+  if (uploadRoleIconBtn) {
+    uploadRoleIconBtn.onclick = function() {
+      qS('#role-icon-input').click();
+    };
+  }
+  
+  var roleIconInput = qS('#role-icon-input');
+  if (roleIconInput) {
+    roleIconInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 256 * 1024) {
+        showNotification('Файл слишком большой (макс. 256KB)');
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        state.roleIcon = ev.target.result;
+        var preview = qS('#role-icon-preview');
+        if (preview) {
+          preview.innerHTML = '<img src="' + ev.target.result + '">';
+        }
+      };
+      reader.readAsDataURL(file);
     };
   }
   
@@ -3674,44 +3764,141 @@ document.addEventListener('DOMContentLoaded', function() {
       var color = qS('#role-color-input').value;
       var permissions = getSelectedPermissions();
       
-      if (!name) return;
+      if (!name) {
+        showNotification('Введите название роли');
+        return;
+      }
       
       if (state.editingRoleId) {
-        send({ type: 'update_role', serverId: state.editingServerId, roleId: state.editingRoleId, name: name, color: color, permissions: permissions });
+        send({ type: 'update_role', serverId: state.editingServerId, roleId: state.editingRoleId, name: name, color: color, permissions: permissions, icon: state.roleIcon });
       } else {
-        send({ type: 'create_role', serverId: state.editingServerId, name: name, color: color, permissions: permissions });
+        send({ type: 'create_role', serverId: state.editingServerId, name: name, color: color, permissions: permissions, icon: state.roleIcon });
       }
       closeModal('role-modal');
+      showNotification('Роль сохранена');
     };
   }
   
   function resetPermissionCheckboxes() {
-    qS('#perm-send-messages').checked = true;
-    qS('#perm-manage-messages').checked = false;
-    qS('#perm-manage-channels').checked = false;
-    qS('#perm-kick').checked = false;
-    qS('#perm-ban').checked = false;
-    qS('#perm-manage-roles').checked = false;
+    // General
+    var adminPerm = qS('#perm-admin');
+    if (adminPerm) adminPerm.checked = false;
+    var manageRoles = qS('#perm-manage-roles');
+    if (manageRoles) manageRoles.checked = false;
+    var manageChannels = qS('#perm-manage-channels');
+    if (manageChannels) manageChannels.checked = false;
+    var kick = qS('#perm-kick');
+    if (kick) kick.checked = false;
+    var ban = qS('#perm-ban');
+    if (ban) ban.checked = false;
+    var manageServer = qS('#perm-manage-server');
+    if (manageServer) manageServer.checked = false;
+    
+    // Text
+    var viewChannels = qS('#perm-view-channels');
+    if (viewChannels) viewChannels.checked = true;
+    var sendMessages = qS('#perm-send-messages');
+    if (sendMessages) sendMessages.checked = true;
+    var manageMessages = qS('#perm-manage-messages');
+    if (manageMessages) manageMessages.checked = false;
+    var attachFiles = qS('#perm-attach-files');
+    if (attachFiles) attachFiles.checked = true;
+    var addReactions = qS('#perm-add-reactions');
+    if (addReactions) addReactions.checked = true;
+    var mentionEveryone = qS('#perm-mention-everyone');
+    if (mentionEveryone) mentionEveryone.checked = false;
+    var readHistory = qS('#perm-read-history');
+    if (readHistory) readHistory.checked = true;
+    
+    // Voice
+    var voiceConnect = qS('#perm-voice-connect');
+    if (voiceConnect) voiceConnect.checked = true;
+    var voiceSpeak = qS('#perm-voice-speak');
+    if (voiceSpeak) voiceSpeak.checked = true;
+    var voiceVideo = qS('#perm-voice-video');
+    if (voiceVideo) voiceVideo.checked = true;
+    var voiceStream = qS('#perm-voice-stream');
+    if (voiceStream) voiceStream.checked = true;
+    var voiceMute = qS('#perm-voice-mute-members');
+    if (voiceMute) voiceMute.checked = false;
+    var voiceMove = qS('#perm-voice-move-members');
+    if (voiceMove) voiceMove.checked = false;
+    var voicePriority = qS('#perm-voice-priority');
+    if (voicePriority) voicePriority.checked = false;
   }
   
   function getSelectedPermissions() {
     var perms = [];
-    if (qS('#perm-send-messages').checked) perms.push('send_messages');
-    if (qS('#perm-manage-messages').checked) perms.push('manage_messages');
-    if (qS('#perm-manage-channels').checked) perms.push('manage_channels');
-    if (qS('#perm-kick').checked) perms.push('kick');
-    if (qS('#perm-ban').checked) perms.push('ban');
-    if (qS('#perm-manage-roles').checked) perms.push('manage_roles');
+    // General
+    if (qS('#perm-admin')?.checked) perms.push('admin');
+    if (qS('#perm-manage-roles')?.checked) perms.push('manage_roles');
+    if (qS('#perm-manage-channels')?.checked) perms.push('manage_channels');
+    if (qS('#perm-kick')?.checked) perms.push('kick');
+    if (qS('#perm-ban')?.checked) perms.push('ban');
+    if (qS('#perm-manage-server')?.checked) perms.push('manage_server');
+    // Text
+    if (qS('#perm-view-channels')?.checked) perms.push('view_channels');
+    if (qS('#perm-send-messages')?.checked) perms.push('send_messages');
+    if (qS('#perm-manage-messages')?.checked) perms.push('manage_messages');
+    if (qS('#perm-attach-files')?.checked) perms.push('attach_files');
+    if (qS('#perm-add-reactions')?.checked) perms.push('add_reactions');
+    if (qS('#perm-mention-everyone')?.checked) perms.push('mention_everyone');
+    if (qS('#perm-read-history')?.checked) perms.push('read_history');
+    // Voice
+    if (qS('#perm-voice-connect')?.checked) perms.push('voice_connect');
+    if (qS('#perm-voice-speak')?.checked) perms.push('voice_speak');
+    if (qS('#perm-voice-video')?.checked) perms.push('voice_video');
+    if (qS('#perm-voice-stream')?.checked) perms.push('voice_stream');
+    if (qS('#perm-voice-mute-members')?.checked) perms.push('voice_mute_members');
+    if (qS('#perm-voice-move-members')?.checked) perms.push('voice_move_members');
+    if (qS('#perm-voice-priority')?.checked) perms.push('voice_priority');
     return perms;
   }
   
   function setPermissionCheckboxes(perms) {
-    qS('#perm-send-messages').checked = perms.includes('send_messages');
-    qS('#perm-manage-messages').checked = perms.includes('manage_messages');
-    qS('#perm-manage-channels').checked = perms.includes('manage_channels');
-    qS('#perm-kick').checked = perms.includes('kick');
-    qS('#perm-ban').checked = perms.includes('ban');
-    qS('#perm-manage-roles').checked = perms.includes('manage_roles');
+    // General
+    var adminPerm = qS('#perm-admin');
+    if (adminPerm) adminPerm.checked = perms.includes('admin') || perms.includes('all');
+    var manageRoles = qS('#perm-manage-roles');
+    if (manageRoles) manageRoles.checked = perms.includes('manage_roles') || perms.includes('all');
+    var manageChannels = qS('#perm-manage-channels');
+    if (manageChannels) manageChannels.checked = perms.includes('manage_channels') || perms.includes('all');
+    var kick = qS('#perm-kick');
+    if (kick) kick.checked = perms.includes('kick') || perms.includes('all');
+    var ban = qS('#perm-ban');
+    if (ban) ban.checked = perms.includes('ban') || perms.includes('all');
+    var manageServer = qS('#perm-manage-server');
+    if (manageServer) manageServer.checked = perms.includes('manage_server') || perms.includes('all');
+    // Text
+    var viewChannels = qS('#perm-view-channels');
+    if (viewChannels) viewChannels.checked = perms.includes('view_channels') || perms.includes('read_messages') || perms.includes('all');
+    var sendMessages = qS('#perm-send-messages');
+    if (sendMessages) sendMessages.checked = perms.includes('send_messages') || perms.includes('all');
+    var manageMessages = qS('#perm-manage-messages');
+    if (manageMessages) manageMessages.checked = perms.includes('manage_messages') || perms.includes('all');
+    var attachFiles = qS('#perm-attach-files');
+    if (attachFiles) attachFiles.checked = perms.includes('attach_files') || perms.includes('all');
+    var addReactions = qS('#perm-add-reactions');
+    if (addReactions) addReactions.checked = perms.includes('add_reactions') || perms.includes('all');
+    var mentionEveryone = qS('#perm-mention-everyone');
+    if (mentionEveryone) mentionEveryone.checked = perms.includes('mention_everyone') || perms.includes('all');
+    var readHistory = qS('#perm-read-history');
+    if (readHistory) readHistory.checked = perms.includes('read_history') || perms.includes('all');
+    // Voice
+    var voiceConnect = qS('#perm-voice-connect');
+    if (voiceConnect) voiceConnect.checked = perms.includes('voice_connect') || perms.includes('all');
+    var voiceSpeak = qS('#perm-voice-speak');
+    if (voiceSpeak) voiceSpeak.checked = perms.includes('voice_speak') || perms.includes('all');
+    var voiceVideo = qS('#perm-voice-video');
+    if (voiceVideo) voiceVideo.checked = perms.includes('voice_video') || perms.includes('all');
+    var voiceStream = qS('#perm-voice-stream');
+    if (voiceStream) voiceStream.checked = perms.includes('voice_stream') || perms.includes('all');
+    var voiceMute = qS('#perm-voice-mute-members');
+    if (voiceMute) voiceMute.checked = perms.includes('voice_mute_members') || perms.includes('all');
+    var voiceMove = qS('#perm-voice-move-members');
+    if (voiceMove) voiceMove.checked = perms.includes('voice_move_members') || perms.includes('all');
+    var voicePriority = qS('#perm-voice-priority');
+    if (voicePriority) voicePriority.checked = perms.includes('voice_priority') || perms.includes('all');
   }
   
   // ============ MEMBER MANAGEMENT ============
