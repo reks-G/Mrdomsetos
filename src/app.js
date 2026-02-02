@@ -1331,9 +1331,10 @@ function renderRoles() {
   rl.querySelectorAll('.delete-role-btn').forEach(function(btn) {
     btn.onclick = function(e) {
       e.stopPropagation();
-      if (confirm('Удалить роль?')) {
-        send({ type: 'delete_role', serverId: state.editingServerId, roleId: btn.dataset.id });
-      }
+      var roleId = btn.dataset.id;
+      showConfirmDialog('Удалить роль?', function() {
+        send({ type: 'delete_role', serverId: state.editingServerId, roleId: roleId });
+      });
     };
   });
 }
@@ -3707,9 +3708,9 @@ function showMemberContext(x, y, memberId) {
   if (kickBtn) {
     kickBtn.onclick = function() {
       hideContextMenu();
-      if (confirm('Исключить пользователя с сервера?')) {
+      showConfirmDialog('Исключить пользователя с сервера?', function() {
         send({ type: 'kick_member', serverId: state.currentServer, memberId: memberId });
-      }
+      });
     };
   }
   
@@ -3717,9 +3718,9 @@ function showMemberContext(x, y, memberId) {
   if (banBtn) {
     banBtn.onclick = function() {
       hideContextMenu();
-      if (confirm('Забанить пользователя на сервере?')) {
+      showConfirmDialog('Забанить пользователя на сервере?', function() {
         send({ type: 'ban_member', serverId: state.currentServer, memberId: memberId });
-      }
+      });
     };
   }
   
@@ -3740,8 +3741,13 @@ function showRolesSubmenu(x, y, memberId) {
   
   var memberRoleId = srv.memberRoles ? srv.memberRoles[memberId] : null;
   
+  // Sort roles by position (higher position first, like in settings)
+  var sortedRoles = srv.roles.slice().sort(function(a, b) {
+    return (b.position || 0) - (a.position || 0);
+  });
+  
   var list = qS('#roles-submenu-list');
-  list.innerHTML = srv.roles.map(function(role) {
+  list.innerHTML = sortedRoles.map(function(role) {
     var isAssigned = memberRoleId === role.id;
     return '<div class="role-submenu-item" data-role-id="' + role.id + '" data-member-id="' + memberId + '">' +
       '<div class="role-dot" style="background: ' + (role.color || '#99aab5') + '"></div>' +
@@ -3775,6 +3781,64 @@ function showRolesSubmenu(x, y, memberId) {
   
   positionContextMenu(submenu, x + 10, y);
   submenu.classList.add('visible');
+}
+
+// Styled confirm dialog
+function showConfirmDialog(message, onConfirm, onCancel) {
+  var overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  
+  var dialog = document.createElement('div');
+  dialog.className = 'confirm-dialog';
+  
+  var text = document.createElement('div');
+  text.className = 'confirm-text';
+  text.textContent = message;
+  
+  var buttons = document.createElement('div');
+  buttons.className = 'confirm-buttons';
+  
+  var confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn primary';
+  confirmBtn.textContent = 'Подтвердить';
+  confirmBtn.onclick = function() {
+    document.body.removeChild(overlay);
+    if (onConfirm) onConfirm();
+  };
+  
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn secondary';
+  cancelBtn.textContent = 'Отмена';
+  cancelBtn.onclick = function() {
+    document.body.removeChild(overlay);
+    if (onCancel) onCancel();
+  };
+  
+  buttons.appendChild(confirmBtn);
+  buttons.appendChild(cancelBtn);
+  dialog.appendChild(text);
+  dialog.appendChild(buttons);
+  overlay.appendChild(dialog);
+  
+  document.body.appendChild(overlay);
+  
+  // Close on overlay click
+  overlay.onclick = function(e) {
+    if (e.target === overlay) {
+      document.body.removeChild(overlay);
+      if (onCancel) onCancel();
+    }
+  };
+  
+  // Close on Escape
+  var escHandler = function(e) {
+    if (e.key === 'Escape') {
+      document.body.removeChild(overlay);
+      document.removeEventListener('keydown', escHandler);
+      if (onCancel) onCancel();
+    }
+  };
+  document.addEventListener('keydown', escHandler);
 }
 
 function hasPermission(perm) {
@@ -4584,9 +4648,10 @@ document.addEventListener('DOMContentLoaded', function() {
       setTimeout(renderServerMembersList, 500);
     };
     serverCtx.querySelector('[data-action="leave"]').onclick = function() {
-      if (confirm('Покинуть сервер?')) {
-        send({ type: 'leave_server', serverId: serverCtx.dataset.serverId });
-      }
+      var serverId = serverCtx.dataset.serverId;
+      showConfirmDialog('Покинуть сервер?', function() {
+        send({ type: 'leave_server', serverId: serverId });
+      });
     };
   }
 
