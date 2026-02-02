@@ -938,13 +938,15 @@ function renderMembers() {
     // Store role info on member for display
     m.roleData = memberRole;
     
+    var isOnline = m.status === 'online';
+    
     // If member has a role with hoist enabled, group by role name
     if (memberRole && memberRole.hoist) {
       if (!roleGroups[memberRole.id]) {
         roleGroups[memberRole.id] = { role: memberRole, members: [] };
       }
       roleGroups[memberRole.id].members.push(m);
-    } else if (m.status === 'online') {
+    } else if (isOnline) {
       ungroupedOnline.push(m);
     } else {
       ungroupedOffline.push(m);
@@ -954,9 +956,9 @@ function renderMembers() {
   // Build HTML - first show role groups, then online, then offline
   var html = '';
   
-  // Sort roles by position (lower position = higher priority)
+  // Sort roles by position (higher position = higher priority, show first)
   var sortedRoles = Object.values(roleGroups).sort(function(a, b) { 
-    return (a.role.position || 99) - (b.role.position || 99); 
+    return (b.role.position || 0) - (a.role.position || 0); 
   });
   
   sortedRoles.forEach(function(group) {
@@ -967,25 +969,27 @@ function renderMembers() {
     html += '</div>';
   });
   
-  // Update counts
+  // Calculate total online
   var totalOnline = ungroupedOnline.length;
   sortedRoles.forEach(function(g) { 
     totalOnline += g.members.filter(function(m) { return m.status === 'online'; }).length; 
   });
   
-  qS('#online-count').textContent = totalOnline;
-  qS('#offline-count').textContent = ungroupedOffline.length;
-  
-  // Only show "В СЕТИ" section if there are ungrouped online members
-  if (ungroupedOnline.length > 0) {
-    html += '<div class="member-group">';
-    html += '<div class="member-group-header">В СЕТИ — ' + ungroupedOnline.length + '</div>';
-    html += ungroupedOnline.map(function(m) { return memberHTML(m, srv); }).join('');
-    html += '</div>';
-  }
+  // Always show "В СЕТИ" section with ungrouped online members
+  html += '<div class="member-group">';
+  html += '<div class="member-group-header">В СЕТИ — ' + totalOnline + '</div>';
+  html += ungroupedOnline.map(function(m) { return memberHTML(m, srv); }).join('');
+  html += '</div>';
   
   ol.innerHTML = html;
-  ofl.innerHTML = ungroupedOffline.map(function(m) { return memberHTML(m, srv); }).join('');
+  
+  // Show offline members
+  var offlineHtml = '';
+  if (ungroupedOffline.length > 0) {
+    offlineHtml = '<div class="member-group-header">НЕ В СЕТИ — ' + ungroupedOffline.length + '</div>';
+    offlineHtml += ungroupedOffline.map(function(m) { return memberHTML(m, srv); }).join('');
+  }
+  ofl.innerHTML = offlineHtml;
   
   // Bind member context menu
   qSA('.member-item').forEach(function(el) {
@@ -3115,6 +3119,127 @@ function signOut() {
 }
 
 
+// ============ PERMISSION HELPERS ============
+function setPermissionCheckboxes(perms) {
+  // General
+  var adminPerm = qS('#perm-admin');
+  if (adminPerm) adminPerm.checked = perms.includes('admin') || perms.includes('all');
+  var manageRoles = qS('#perm-manage-roles');
+  if (manageRoles) manageRoles.checked = perms.includes('manage_roles') || perms.includes('all');
+  var manageChannels = qS('#perm-manage-channels');
+  if (manageChannels) manageChannels.checked = perms.includes('manage_channels') || perms.includes('all');
+  var kick = qS('#perm-kick');
+  if (kick) kick.checked = perms.includes('kick') || perms.includes('all');
+  var ban = qS('#perm-ban');
+  if (ban) ban.checked = perms.includes('ban') || perms.includes('all');
+  var manageServer = qS('#perm-manage-server');
+  if (manageServer) manageServer.checked = perms.includes('manage_server') || perms.includes('all');
+  // Text
+  var viewChannels = qS('#perm-view-channels');
+  if (viewChannels) viewChannels.checked = perms.includes('view_channels') || perms.includes('read_messages') || perms.includes('all');
+  var sendMessages = qS('#perm-send-messages');
+  if (sendMessages) sendMessages.checked = perms.includes('send_messages') || perms.includes('all');
+  var manageMessages = qS('#perm-manage-messages');
+  if (manageMessages) manageMessages.checked = perms.includes('manage_messages') || perms.includes('all');
+  var attachFiles = qS('#perm-attach-files');
+  if (attachFiles) attachFiles.checked = perms.includes('attach_files') || perms.includes('all');
+  var addReactions = qS('#perm-add-reactions');
+  if (addReactions) addReactions.checked = perms.includes('add_reactions') || perms.includes('all');
+  var mentionEveryone = qS('#perm-mention-everyone');
+  if (mentionEveryone) mentionEveryone.checked = perms.includes('mention_everyone') || perms.includes('all');
+  var readHistory = qS('#perm-read-history');
+  if (readHistory) readHistory.checked = perms.includes('read_history') || perms.includes('all');
+  // Voice
+  var voiceConnect = qS('#perm-voice-connect');
+  if (voiceConnect) voiceConnect.checked = perms.includes('voice_connect') || perms.includes('all');
+  var voiceSpeak = qS('#perm-voice-speak');
+  if (voiceSpeak) voiceSpeak.checked = perms.includes('voice_speak') || perms.includes('all');
+  var voiceVideo = qS('#perm-voice-video');
+  if (voiceVideo) voiceVideo.checked = perms.includes('voice_video') || perms.includes('all');
+  var voiceStream = qS('#perm-voice-stream');
+  if (voiceStream) voiceStream.checked = perms.includes('voice_stream') || perms.includes('all');
+  var voiceMute = qS('#perm-voice-mute-members');
+  if (voiceMute) voiceMute.checked = perms.includes('voice_mute_members') || perms.includes('all');
+  var voiceMove = qS('#perm-voice-move-members');
+  if (voiceMove) voiceMove.checked = perms.includes('voice_move_members') || perms.includes('all');
+  var voicePriority = qS('#perm-voice-priority');
+  if (voicePriority) voicePriority.checked = perms.includes('voice_priority') || perms.includes('all');
+}
+
+function getSelectedPermissions() {
+  var perms = [];
+  // General
+  if (qS('#perm-admin') && qS('#perm-admin').checked) perms.push('admin');
+  if (qS('#perm-manage-roles') && qS('#perm-manage-roles').checked) perms.push('manage_roles');
+  if (qS('#perm-manage-channels') && qS('#perm-manage-channels').checked) perms.push('manage_channels');
+  if (qS('#perm-kick') && qS('#perm-kick').checked) perms.push('kick');
+  if (qS('#perm-ban') && qS('#perm-ban').checked) perms.push('ban');
+  if (qS('#perm-manage-server') && qS('#perm-manage-server').checked) perms.push('manage_server');
+  // Text
+  if (qS('#perm-view-channels') && qS('#perm-view-channels').checked) perms.push('view_channels');
+  if (qS('#perm-send-messages') && qS('#perm-send-messages').checked) perms.push('send_messages');
+  if (qS('#perm-manage-messages') && qS('#perm-manage-messages').checked) perms.push('manage_messages');
+  if (qS('#perm-attach-files') && qS('#perm-attach-files').checked) perms.push('attach_files');
+  if (qS('#perm-add-reactions') && qS('#perm-add-reactions').checked) perms.push('add_reactions');
+  if (qS('#perm-mention-everyone') && qS('#perm-mention-everyone').checked) perms.push('mention_everyone');
+  if (qS('#perm-read-history') && qS('#perm-read-history').checked) perms.push('read_history');
+  // Voice
+  if (qS('#perm-voice-connect') && qS('#perm-voice-connect').checked) perms.push('voice_connect');
+  if (qS('#perm-voice-speak') && qS('#perm-voice-speak').checked) perms.push('voice_speak');
+  if (qS('#perm-voice-video') && qS('#perm-voice-video').checked) perms.push('voice_video');
+  if (qS('#perm-voice-stream') && qS('#perm-voice-stream').checked) perms.push('voice_stream');
+  if (qS('#perm-voice-mute-members') && qS('#perm-voice-mute-members').checked) perms.push('voice_mute_members');
+  if (qS('#perm-voice-move-members') && qS('#perm-voice-move-members').checked) perms.push('voice_move_members');
+  if (qS('#perm-voice-priority') && qS('#perm-voice-priority').checked) perms.push('voice_priority');
+  return perms;
+}
+
+function resetPermissionCheckboxes() {
+  // General
+  var adminPerm = qS('#perm-admin');
+  if (adminPerm) adminPerm.checked = false;
+  var manageRoles = qS('#perm-manage-roles');
+  if (manageRoles) manageRoles.checked = false;
+  var manageChannels = qS('#perm-manage-channels');
+  if (manageChannels) manageChannels.checked = false;
+  var kick = qS('#perm-kick');
+  if (kick) kick.checked = false;
+  var ban = qS('#perm-ban');
+  if (ban) ban.checked = false;
+  var manageServer = qS('#perm-manage-server');
+  if (manageServer) manageServer.checked = false;
+  // Text - default enabled
+  var viewChannels = qS('#perm-view-channels');
+  if (viewChannels) viewChannels.checked = true;
+  var sendMessages = qS('#perm-send-messages');
+  if (sendMessages) sendMessages.checked = true;
+  var manageMessages = qS('#perm-manage-messages');
+  if (manageMessages) manageMessages.checked = false;
+  var attachFiles = qS('#perm-attach-files');
+  if (attachFiles) attachFiles.checked = true;
+  var addReactions = qS('#perm-add-reactions');
+  if (addReactions) addReactions.checked = true;
+  var mentionEveryone = qS('#perm-mention-everyone');
+  if (mentionEveryone) mentionEveryone.checked = false;
+  var readHistory = qS('#perm-read-history');
+  if (readHistory) readHistory.checked = true;
+  // Voice
+  var voiceConnect = qS('#perm-voice-connect');
+  if (voiceConnect) voiceConnect.checked = true;
+  var voiceSpeak = qS('#perm-voice-speak');
+  if (voiceSpeak) voiceSpeak.checked = true;
+  var voiceVideo = qS('#perm-voice-video');
+  if (voiceVideo) voiceVideo.checked = true;
+  var voiceStream = qS('#perm-voice-stream');
+  if (voiceStream) voiceStream.checked = true;
+  var voiceMute = qS('#perm-voice-mute-members');
+  if (voiceMute) voiceMute.checked = false;
+  var voiceMove = qS('#perm-voice-move-members');
+  if (voiceMove) voiceMove.checked = false;
+  var voicePriority = qS('#perm-voice-priority');
+  if (voicePriority) voicePriority.checked = false;
+}
+
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
   // Check for invite code in URL
@@ -4218,128 +4343,6 @@ document.addEventListener('DOMContentLoaded', function() {
       closeModal('role-modal');
       showNotification('Роль сохранена');
     };
-  }
-  
-  function resetPermissionCheckboxes() {
-    // General
-    var adminPerm = qS('#perm-admin');
-    if (adminPerm) adminPerm.checked = false;
-    var manageRoles = qS('#perm-manage-roles');
-    if (manageRoles) manageRoles.checked = false;
-    var manageChannels = qS('#perm-manage-channels');
-    if (manageChannels) manageChannels.checked = false;
-    var kick = qS('#perm-kick');
-    if (kick) kick.checked = false;
-    var ban = qS('#perm-ban');
-    if (ban) ban.checked = false;
-    var manageServer = qS('#perm-manage-server');
-    if (manageServer) manageServer.checked = false;
-    
-    // Text
-    var viewChannels = qS('#perm-view-channels');
-    if (viewChannels) viewChannels.checked = true;
-    var sendMessages = qS('#perm-send-messages');
-    if (sendMessages) sendMessages.checked = true;
-    var manageMessages = qS('#perm-manage-messages');
-    if (manageMessages) manageMessages.checked = false;
-    var attachFiles = qS('#perm-attach-files');
-    if (attachFiles) attachFiles.checked = true;
-    var addReactions = qS('#perm-add-reactions');
-    if (addReactions) addReactions.checked = true;
-    var mentionEveryone = qS('#perm-mention-everyone');
-    if (mentionEveryone) mentionEveryone.checked = false;
-    var readHistory = qS('#perm-read-history');
-    if (readHistory) readHistory.checked = true;
-    
-    // Voice
-    var voiceConnect = qS('#perm-voice-connect');
-    if (voiceConnect) voiceConnect.checked = true;
-    var voiceSpeak = qS('#perm-voice-speak');
-    if (voiceSpeak) voiceSpeak.checked = true;
-    var voiceVideo = qS('#perm-voice-video');
-    if (voiceVideo) voiceVideo.checked = true;
-    var voiceStream = qS('#perm-voice-stream');
-    if (voiceStream) voiceStream.checked = true;
-    var voiceMute = qS('#perm-voice-mute-members');
-    if (voiceMute) voiceMute.checked = false;
-    var voiceMove = qS('#perm-voice-move-members');
-    if (voiceMove) voiceMove.checked = false;
-    var voicePriority = qS('#perm-voice-priority');
-    if (voicePriority) voicePriority.checked = false;
-  }
-  
-  function getSelectedPermissions() {
-    var perms = [];
-    // General
-    if (qS('#perm-admin')?.checked) perms.push('admin');
-    if (qS('#perm-manage-roles')?.checked) perms.push('manage_roles');
-    if (qS('#perm-manage-channels')?.checked) perms.push('manage_channels');
-    if (qS('#perm-kick')?.checked) perms.push('kick');
-    if (qS('#perm-ban')?.checked) perms.push('ban');
-    if (qS('#perm-manage-server')?.checked) perms.push('manage_server');
-    // Text
-    if (qS('#perm-view-channels')?.checked) perms.push('view_channels');
-    if (qS('#perm-send-messages')?.checked) perms.push('send_messages');
-    if (qS('#perm-manage-messages')?.checked) perms.push('manage_messages');
-    if (qS('#perm-attach-files')?.checked) perms.push('attach_files');
-    if (qS('#perm-add-reactions')?.checked) perms.push('add_reactions');
-    if (qS('#perm-mention-everyone')?.checked) perms.push('mention_everyone');
-    if (qS('#perm-read-history')?.checked) perms.push('read_history');
-    // Voice
-    if (qS('#perm-voice-connect')?.checked) perms.push('voice_connect');
-    if (qS('#perm-voice-speak')?.checked) perms.push('voice_speak');
-    if (qS('#perm-voice-video')?.checked) perms.push('voice_video');
-    if (qS('#perm-voice-stream')?.checked) perms.push('voice_stream');
-    if (qS('#perm-voice-mute-members')?.checked) perms.push('voice_mute_members');
-    if (qS('#perm-voice-move-members')?.checked) perms.push('voice_move_members');
-    if (qS('#perm-voice-priority')?.checked) perms.push('voice_priority');
-    return perms;
-  }
-  
-  function setPermissionCheckboxes(perms) {
-    // General
-    var adminPerm = qS('#perm-admin');
-    if (adminPerm) adminPerm.checked = perms.includes('admin') || perms.includes('all');
-    var manageRoles = qS('#perm-manage-roles');
-    if (manageRoles) manageRoles.checked = perms.includes('manage_roles') || perms.includes('all');
-    var manageChannels = qS('#perm-manage-channels');
-    if (manageChannels) manageChannels.checked = perms.includes('manage_channels') || perms.includes('all');
-    var kick = qS('#perm-kick');
-    if (kick) kick.checked = perms.includes('kick') || perms.includes('all');
-    var ban = qS('#perm-ban');
-    if (ban) ban.checked = perms.includes('ban') || perms.includes('all');
-    var manageServer = qS('#perm-manage-server');
-    if (manageServer) manageServer.checked = perms.includes('manage_server') || perms.includes('all');
-    // Text
-    var viewChannels = qS('#perm-view-channels');
-    if (viewChannels) viewChannels.checked = perms.includes('view_channels') || perms.includes('read_messages') || perms.includes('all');
-    var sendMessages = qS('#perm-send-messages');
-    if (sendMessages) sendMessages.checked = perms.includes('send_messages') || perms.includes('all');
-    var manageMessages = qS('#perm-manage-messages');
-    if (manageMessages) manageMessages.checked = perms.includes('manage_messages') || perms.includes('all');
-    var attachFiles = qS('#perm-attach-files');
-    if (attachFiles) attachFiles.checked = perms.includes('attach_files') || perms.includes('all');
-    var addReactions = qS('#perm-add-reactions');
-    if (addReactions) addReactions.checked = perms.includes('add_reactions') || perms.includes('all');
-    var mentionEveryone = qS('#perm-mention-everyone');
-    if (mentionEveryone) mentionEveryone.checked = perms.includes('mention_everyone') || perms.includes('all');
-    var readHistory = qS('#perm-read-history');
-    if (readHistory) readHistory.checked = perms.includes('read_history') || perms.includes('all');
-    // Voice
-    var voiceConnect = qS('#perm-voice-connect');
-    if (voiceConnect) voiceConnect.checked = perms.includes('voice_connect') || perms.includes('all');
-    var voiceSpeak = qS('#perm-voice-speak');
-    if (voiceSpeak) voiceSpeak.checked = perms.includes('voice_speak') || perms.includes('all');
-    var voiceVideo = qS('#perm-voice-video');
-    if (voiceVideo) voiceVideo.checked = perms.includes('voice_video') || perms.includes('all');
-    var voiceStream = qS('#perm-voice-stream');
-    if (voiceStream) voiceStream.checked = perms.includes('voice_stream') || perms.includes('all');
-    var voiceMute = qS('#perm-voice-mute-members');
-    if (voiceMute) voiceMute.checked = perms.includes('voice_mute_members') || perms.includes('all');
-    var voiceMove = qS('#perm-voice-move-members');
-    if (voiceMove) voiceMove.checked = perms.includes('voice_move_members') || perms.includes('all');
-    var voicePriority = qS('#perm-voice-priority');
-    if (voicePriority) voicePriority.checked = perms.includes('voice_priority') || perms.includes('all');
   }
   
   // ============ MEMBER MANAGEMENT ============

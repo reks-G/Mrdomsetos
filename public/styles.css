@@ -4571,8 +4571,3 @@ textarea:focus {
   font-size: 12px;
   color: var(--text-muted);
 }
-
-/* Hidden online count since we show it dynamically */
-#online-count {
-  display: none;
-}
