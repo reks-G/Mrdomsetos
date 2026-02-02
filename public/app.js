@@ -982,6 +982,9 @@ function renderMembers() {
   var ungroupedOnline = [];
   var ungroupedOffline = [];
   
+  // Track members in hoisted roles
+  var membersInHoistedRoles = new Set();
+  
   mems.forEach(function(m) {
     var memberRoleId = srv.memberRoles[m.id];
     var memberRole = memberRoleId ? roles.find(function(r) { return r.id === memberRoleId; }) : null;
@@ -997,6 +1000,7 @@ function renderMembers() {
         roleGroups[memberRole.id] = { role: memberRole, members: [] };
       }
       roleGroups[memberRole.id].members.push(m);
+      membersInHoistedRoles.add(m.id);
     } else if (isOnline) {
       ungroupedOnline.push(m);
     } else {
@@ -1020,21 +1024,17 @@ function renderMembers() {
     html += '</div>';
   });
   
-  // Calculate total online
-  var totalOnline = ungroupedOnline.length;
-  sortedRoles.forEach(function(g) { 
-    totalOnline += g.members.filter(function(m) { return m.status === 'online'; }).length; 
-  });
-  
-  // Always show "В СЕТИ" section with ungrouped online members
-  html += '<div class="member-group">';
-  html += '<div class="member-group-header">В СЕТИ — ' + totalOnline + '</div>';
-  html += ungroupedOnline.map(function(m) { return memberHTML(m, srv); }).join('');
-  html += '</div>';
+  // Show "В СЕТИ" section only with ungrouped online members (not in hoisted roles)
+  if (ungroupedOnline.length > 0) {
+    html += '<div class="member-group">';
+    html += '<div class="member-group-header">В СЕТИ — ' + ungroupedOnline.length + '</div>';
+    html += ungroupedOnline.map(function(m) { return memberHTML(m, srv); }).join('');
+    html += '</div>';
+  }
   
   ol.innerHTML = html;
   
-  // Show offline members
+  // Show offline members (not in hoisted roles)
   var offlineHtml = '';
   if (ungroupedOffline.length > 0) {
     offlineHtml = '<div class="member-group-header">НЕ В СЕТИ — ' + ungroupedOffline.length + '</div>';
