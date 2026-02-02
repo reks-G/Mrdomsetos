@@ -705,6 +705,15 @@ function handleMessage(msg) {
       }
     },
     
+    roles_reordered: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv && msg.roles) {
+        srv.roles = msg.roles;
+        if (state.editingServerId === msg.serverId) renderRoles();
+        if (state.currentServer === msg.serverId) renderMembers();
+      }
+    },
+    
     role_assigned: function() {
       var srv = state.servers.get(msg.serverId);
       if (srv) {
@@ -1258,7 +1267,8 @@ function renderRoles() {
       if (memberCount < 0) memberCount = 0;
     }
     
-    return '<div class="role-item" data-id="' + role.id + '">' +
+    return '<div class="role-item' + (isDefault ? '' : ' draggable') + '" data-id="' + role.id + '" ' + (isDefault ? '' : 'draggable="true"') + '>' +
+      (isDefault ? '' : '<div class="drag-handle"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>') +
       '<div class="role-info">' +
       '<div class="role-color" style="background: ' + (role.color || '#99aab5') + '"></div>' +
       '<div class="role-details">' +
@@ -1271,6 +1281,9 @@ function renderRoles() {
       (isDefault ? '' : '<button class="btn danger delete-role-btn" data-id="' + role.id + '">Удалить</button>') +
       '</div></div>';
   }).join('');
+  
+  // Setup drag and drop
+  setupRoleDragAndDrop(rl);
   
   rl.querySelectorAll('.edit-role-btn').forEach(function(btn) {
     btn.onclick = function(e) {
@@ -1323,6 +1336,105 @@ function renderRoles() {
       }
     };
   });
+}
+
+function setupRoleDragAndDrop(container) {
+  var draggedItem = null;
+  var placeholder = null;
+  
+  container.querySelectorAll('.role-item.draggable').forEach(function(item) {
+    item.addEventListener('dragstart', function(e) {
+      draggedItem = item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', item.dataset.id);
+      
+      // Create placeholder
+      placeholder = document.createElement('div');
+      placeholder.className = 'role-item-placeholder';
+      placeholder.style.height = item.offsetHeight + 'px';
+    });
+    
+    item.addEventListener('dragend', function() {
+      item.classList.remove('dragging');
+      if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.removeChild(placeholder);
+      }
+      draggedItem = null;
+      placeholder = null;
+    });
+    
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      
+      if (!draggedItem || draggedItem === item) return;
+      if (item.dataset.id === 'default') return;
+      
+      var rect = item.getBoundingClientRect();
+      var midY = rect.top + rect.height / 2;
+      
+      if (e.clientY < midY) {
+        item.parentNode.insertBefore(placeholder, item);
+      } else {
+        item.parentNode.insertBefore(placeholder, item.nextSibling);
+      }
+    });
+    
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (!draggedItem || draggedItem === item) return;
+      
+      // Insert dragged item at placeholder position
+      if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(draggedItem, placeholder);
+        placeholder.parentNode.removeChild(placeholder);
+      }
+      
+      // Update positions based on new order
+      updateRolePositions(container);
+    });
+  });
+  
+  // Allow dropping on container
+  container.addEventListener('dragover', function(e) {
+    e.preventDefault();
+  });
+  
+  container.addEventListener('drop', function(e) {
+    e.preventDefault();
+    if (placeholder && placeholder.parentNode) {
+      placeholder.parentNode.insertBefore(draggedItem, placeholder);
+      placeholder.parentNode.removeChild(placeholder);
+    }
+    updateRolePositions(container);
+  });
+}
+
+function updateRolePositions(container) {
+  var items = container.querySelectorAll('.role-item');
+  var positions = [];
+  var totalItems = items.length;
+  
+  items.forEach(function(item, index) {
+    var roleId = item.dataset.id;
+    if (roleId && roleId !== 'default') {
+      // Higher index in DOM = lower position (since we sort desc)
+      // First item should have highest position
+      var newPosition = (totalItems - index) * 10;
+      positions.push({ roleId: roleId, position: newPosition });
+    }
+  });
+  
+  // Send update to server
+  if (positions.length > 0) {
+    send({ 
+      type: 'update_role_positions', 
+      serverId: state.editingServerId, 
+      positions: positions 
+    });
+    showNotification('Порядок ролей обновлён');
+  }
 }
 
 function renderServerMembersList() {

@@ -1233,6 +1233,27 @@ const handlers = {
     broadcastToServer(serverId, { type: 'role_deleted', serverId, roleId });
   },
 
+  // Update role positions (drag and drop reorder)
+  update_role_positions(ws, data) {
+    const { serverId, positions } = data;
+    const userId = ws.userId;
+    const srv = servers.get(serverId);
+    if (!srv || !canManageRoles(serverId, userId)) return;
+    
+    // Update positions for each role
+    positions.forEach(({ roleId, position }) => {
+      const role = srv.roles.find(r => r.id === roleId);
+      if (role && roleId !== 'default') {
+        role.position = position;
+      }
+    });
+    
+    saveAll();
+    
+    // Broadcast updated roles to all members
+    broadcastToServer(serverId, { type: 'roles_reordered', serverId, roles: srv.roles });
+  },
+
   assign_role(ws, data) {
     const { serverId, memberId, roleId } = data;
     const userId = ws.userId;

@@ -4454,6 +4454,49 @@ textarea:focus {
   transition: all 0.2s;
 }
 
+.role-item.draggable {
+  cursor: grab;
+}
+
+.role-item.draggable:active {
+  cursor: grabbing;
+}
+
+.role-item.dragging {
+  opacity: 0.5;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.role-item-placeholder {
+  background: rgba(168, 85, 247, 0.2);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  margin: 4px 0;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.role-item:hover .drag-handle {
+  opacity: 1;
+}
+
+.drag-handle svg {
+  width: 16px;
+  height: 16px;
+}
+
 .role-item:hover {
   background: var(--bg-glass-hover);
   border-color: var(--border-light);
