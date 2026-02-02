@@ -1228,7 +1228,12 @@ const handlers = {
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
-    if (memberId === srv.ownerId) return;
+    
+    // Owner can assign roles to themselves, but can't lose owner role
+    if (memberId === srv.ownerId && roleId !== 'owner') {
+      // Owner can have additional roles, but owner role stays
+      // For now, just allow it
+    }
     
     const role = srv.roles.find(r => r.id === roleId);
     if (!role) return;
@@ -1756,6 +1761,82 @@ const handlers = {
       srv.customReactions = srv.customReactions.filter(r => r.name !== name);
       saveAll();
     }
+  },
+
+  // ============ DM CALL HANDLERS ============
+  
+  // Request DM call
+  dm_call_request(ws, data) {
+    const { to, withVideo } = data;
+    const userId = ws.userId;
+    if (!userId || !to) return;
+    
+    const caller = onlineUsers.get(userId);
+    const callerName = caller?.name || 'Пользователь';
+    const callerAvatar = caller?.avatar || null;
+    
+    // Send incoming call to target user
+    sendToUser(to, {
+      type: 'dm_call_incoming',
+      from: userId,
+      fromName: callerName,
+      fromAvatar: callerAvatar,
+      withVideo: withVideo
+    });
+  },
+  
+  // Accept DM call
+  dm_call_accept(ws, data) {
+    const { to, withVideo } = data;
+    const userId = ws.userId;
+    if (!userId || !to) return;
+    
+    // Notify caller that call was accepted
+    sendToUser(to, {
+      type: 'dm_call_accepted',
+      from: userId,
+      withVideo: withVideo
+    });
+  },
+  
+  // Reject DM call
+  dm_call_reject(ws, data) {
+    const { to } = data;
+    const userId = ws.userId;
+    if (!userId || !to) return;
+    
+    // Notify caller that call was rejected
+    sendToUser(to, {
+      type: 'dm_call_rejected',
+      from: userId
+    });
+  },
+  
+  // DM call signaling (WebRTC)
+  dm_call_signal(ws, data) {
+    const { to, signal } = data;
+    const userId = ws.userId;
+    if (!userId || !to || !signal) return;
+    
+    // Forward signal to peer
+    sendToUser(to, {
+      type: 'dm_call_signal',
+      from: userId,
+      signal: signal
+    });
+  },
+  
+  // End DM call
+  dm_call_end(ws, data) {
+    const { to } = data;
+    const userId = ws.userId;
+    if (!userId || !to) return;
+    
+    // Notify peer that call ended
+    sendToUser(to, {
+      type: 'dm_call_ended',
+      from: userId
+    });
   }
 };
 

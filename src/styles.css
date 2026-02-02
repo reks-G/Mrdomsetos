@@ -4571,3 +4571,242 @@ textarea:focus {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* DM Call Modal */
+.dm-call-modal {
+  background: var(--bg-solid);
+  border-radius: var(--radius-lg);
+  width: 400px;
+  max-width: 95vw;
+  overflow: hidden;
+}
+
+.dm-call-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 30px;
+  min-height: 400px;
+}
+
+.dm-call-user {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+
+.dm-call-avatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ec4899);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  font-weight: 600;
+  color: white;
+  animation: call-pulse 2s ease-in-out infinite;
+}
+
+.dm-call-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+@keyframes call-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4); }
+  50% { box-shadow: 0 0 0 20px rgba(168, 85, 247, 0); }
+}
+
+.dm-call-name {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dm-call-status {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.dm-call-status.connected {
+  color: var(--success);
+}
+
+.dm-call-video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: none;
+  margin-bottom: 20px;
+}
+
+.dm-call-video-container.active {
+  display: block;
+}
+
+#dm-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#dm-local-video {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 120px;
+  height: 90px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 2px solid var(--border);
+}
+
+.dm-call-controls {
+  display: flex;
+  gap: 16px;
+  margin-top: auto;
+}
+
+.dm-call-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.dm-call-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.dm-call-btn:hover {
+  background: var(--bg-glass-hover);
+}
+
+.dm-call-btn.active {
+  background: var(--danger);
+  color: white;
+}
+
+.dm-call-btn.end-call {
+  background: var(--danger);
+  color: white;
+}
+
+.dm-call-btn.end-call:hover {
+  background: #dc2626;
+}
+
+/* Incoming Call Modal */
+.incoming-call-modal {
+  background: var(--bg-solid);
+  border-radius: var(--radius-lg);
+  width: 350px;
+  max-width: 95vw;
+  animation: incoming-call-bounce 0.5s ease;
+}
+
+@keyframes incoming-call-bounce {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.incoming-call-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 30px;
+}
+
+.incoming-call-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #ec4899);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 16px;
+  animation: call-pulse 2s ease-in-out infinite;
+}
+
+.incoming-call-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.incoming-call-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.incoming-call-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 30px;
+}
+
+.incoming-call-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.incoming-call-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius-full);
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.incoming-call-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.incoming-call-btn.accept {
+  background: var(--success);
+  color: white;
+}
+
+.incoming-call-btn.accept:hover {
+  background: #16a34a;
+}
+
+.incoming-call-btn.decline {
+  background: var(--danger);
+  color: white;
+}
+
+.incoming-call-btn.decline:hover {
+  background: #dc2626;
+}
