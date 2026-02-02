@@ -209,16 +209,27 @@ if (!useDB) {
       });
     }
     
+    // Filter out old 'owner' role if exists
+    let roles = srv.roles || [
+      { id: 'admin', name: 'Админ', color: '#e74c3c', position: 50, permissions: ['manage_channels', 'kick', 'ban', 'manage_messages', 'manage_roles'] },
+      { id: 'moderator', name: 'Модератор', color: '#3498db', position: 25, permissions: ['manage_messages', 'kick'] },
+      { id: 'default', name: 'Участник', color: '#99aab5', position: 0, permissions: ['send_messages', 'read_messages'] }
+    ];
+    roles = roles.filter(r => r.id !== 'owner');
+    
+    // Clean up memberRoles - remove 'owner' role assignments
+    const memberRoles = srv.memberRoles || {};
+    Object.keys(memberRoles).forEach(memberId => {
+      if (memberRoles[memberId] === 'owner') {
+        delete memberRoles[memberId];
+      }
+    });
+    
     servers.set(id, {
       ...srv,
       members: new Set(srv.members || []),
-      roles: srv.roles || [
-        { id: 'owner', name: 'Владелец', color: '#f1c40f', position: 100, permissions: ['all'] },
-        { id: 'admin', name: 'Админ', color: '#e74c3c', position: 50, permissions: ['manage_channels', 'kick', 'ban', 'manage_messages'] },
-        { id: 'moderator', name: 'Модератор', color: '#3498db', position: 25, permissions: ['manage_messages', 'kick'] },
-        { id: 'default', name: 'Участник', color: '#99aab5', position: 0, permissions: ['send_messages', 'read_messages'] }
-      ],
-      memberRoles: srv.memberRoles || {},
+      roles: roles,
+      memberRoles: memberRoles,
       bans: new Set(srv.bans || [])
     });
   });
@@ -839,12 +850,11 @@ const handlers = {
       messages: { general: [] },
       members: new Set([userId]),
       roles: [
-        { id: 'owner', name: 'Владелец', color: '#f1c40f', position: 100, permissions: ['all'] },
         { id: 'admin', name: 'Админ', color: '#e74c3c', position: 50, permissions: ['manage_channels', 'kick', 'ban', 'manage_messages', 'manage_roles'] },
         { id: 'moderator', name: 'Модератор', color: '#3498db', position: 25, permissions: ['manage_messages', 'kick'] },
         { id: 'default', name: 'Участник', color: '#99aab5', position: 0, permissions: ['send_messages', 'read_messages'] }
       ],
-      memberRoles: { [userId]: 'owner' },
+      memberRoles: {},
       channelPermissions: {},
       bans: new Set()
     };
@@ -1188,7 +1198,7 @@ const handlers = {
     if (!srv || !canManageRoles(serverId, userId)) return;
     
     const role = srv.roles.find(r => r.id === roleId);
-    if (!role || role.id === 'owner') return;
+    if (!role) return;
     
     const oldName = role.name;
     if (name) role.name = name;
@@ -1208,7 +1218,7 @@ const handlers = {
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
-    if (roleId === 'owner' || roleId === 'default') return;
+    if (roleId === 'default') return;
     
     const role = srv.roles.find(r => r.id === roleId);
     const roleName = role ? role.name : roleId;
@@ -1228,12 +1238,6 @@ const handlers = {
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
-    
-    // Owner can assign roles to themselves, but can't lose owner role
-    if (memberId === srv.ownerId && roleId !== 'owner') {
-      // Owner can have additional roles, but owner role stays
-      // For now, just allow it
-    }
     
     const role = srv.roles.find(r => r.id === roleId);
     if (!role) return;

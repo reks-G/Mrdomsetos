@@ -1251,9 +1251,8 @@ function renderRoles() {
   });
   
   rl.innerHTML = sortedRoles.map(function(role) {
-    var isDefault = role.id === 'owner' || role.id === 'default';
+    var isDefault = role.id === 'default';
     var memberCount = Object.values(srv.memberRoles || {}).filter(function(r) { return r === role.id; }).length;
-    if (role.id === 'owner') memberCount = 1;
     if (role.id === 'default') {
       memberCount = (srv.members ? srv.members.length : 0) - Object.keys(srv.memberRoles || {}).length;
       if (memberCount < 0) memberCount = 0;
@@ -1368,7 +1367,7 @@ function openMemberModal(member, srv) {
   
   var select = qS('#member-role-select');
   if (select && srv.roles) {
-    select.innerHTML = srv.roles.filter(function(r) { return r.id !== 'owner'; }).map(function(r) {
+    select.innerHTML = srv.roles.map(function(r) {
       var selected = (srv.memberRoles[member.id] || 'default') === r.id ? ' selected' : '';
       return '<option value="' + r.id + '"' + selected + '>' + escapeHtml(r.name) + '</option>';
     }).join('');
@@ -3424,7 +3423,7 @@ function showRolesSubmenu(x, y, memberId) {
   var memberRoleId = srv.memberRoles ? srv.memberRoles[memberId] : null;
   
   var list = qS('#roles-submenu-list');
-  list.innerHTML = srv.roles.filter(function(r) { return r.id !== 'owner'; }).map(function(role) {
+  list.innerHTML = srv.roles.map(function(role) {
     var isAssigned = memberRoleId === role.id;
     return '<div class="role-submenu-item" data-role-id="' + role.id + '" data-member-id="' + memberId + '">' +
       '<div class="role-dot" style="background: ' + (role.color || '#99aab5') + '"></div>' +
@@ -4314,7 +4313,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var roleSelect = qS('#channel-perm-role-select');
             if (roleSelect && srv.roles) {
               roleSelect.innerHTML = '<option value="everyone">@everyone</option>' +
-                srv.roles.filter(function(r) { return r.id !== 'owner'; }).map(function(r) {
+                srv.roles.map(function(r) {
                   return '<option value="' + r.id + '">' + escapeHtml(r.name) + '</option>';
                 }).join('');
             }
