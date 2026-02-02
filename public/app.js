@@ -790,7 +790,11 @@ function handleMessage(msg) {
     
     dm_call_rejected: function() {
       if (dmCallState.active && dmCallState.peerId === msg.from) {
-        endDMCall();
+        stopAllCallSounds();
+        playBusyTone();
+        setTimeout(function() {
+          endDMCall();
+        }, 1600);
         showNotification('Звонок отклонён');
       }
     },
@@ -807,6 +811,7 @@ function handleMessage(msg) {
         showNotification('Звонок завершён');
       }
       // Also close incoming call modal if open
+      stopAllCallSounds();
       closeModal('incoming-call-modal');
     },
     
@@ -1791,8 +1796,191 @@ var dmCallState = {
   isVideoEnabled: false,
   isIncoming: false,
   callTimer: null,
-  callDuration: 0
+  callDuration: 0,
+  ringtoneInterval: null,
+  dialingInterval: null
 };
+
+// Call sounds using Web Audio API
+var callSoundContext = null;
+
+function getAudioContext() {
+  if (!callSoundContext) {
+    callSoundContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return callSoundContext;
+}
+
+function playRingtone() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  
+  function playRing() {
+    // Two-tone ringtone
+    var osc1 = ctx.createOscillator();
+    var osc2 = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc1.frequency.value = 440; // A4
+    osc2.frequency.value = 480; // B4
+    
+    gain.gain.value = 0.15;
+    
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc1.start();
+    osc2.start();
+    
+    // Ring pattern: on 1s, off 0.5s
+    setTimeout(function() {
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    }, 800);
+    
+    setTimeout(function() {
+      osc1.stop();
+      osc2.stop();
+    }, 1000);
+  }
+  
+  playRing();
+  dmCallState.ringtoneInterval = setInterval(playRing, 1500);
+}
+
+function playDialingTone() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  
+  function playBeep() {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = 425; // Standard dial tone
+    
+    gain.gain.value = 0.1;
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    
+    setTimeout(function() {
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    }, 400);
+    
+    setTimeout(function() {
+      osc.stop();
+    }, 500);
+  }
+  
+  playBeep();
+  dmCallState.dialingInterval = setInterval(playBeep, 3000);
+}
+
+function playCallConnected() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 600;
+  
+  gain.gain.value = 0.12;
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start();
+  
+  // Quick ascending tone
+  osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+  
+  setTimeout(function() {
+    osc.stop();
+  }, 250);
+}
+
+function playCallEnded() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 480;
+  
+  gain.gain.value = 0.12;
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start();
+  
+  // Descending tone
+  osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+  
+  setTimeout(function() {
+    osc.stop();
+  }, 400);
+}
+
+function playBusyTone() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  
+  var count = 0;
+  function playBusy() {
+    if (count >= 4) return;
+    count++;
+    
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = 480;
+    
+    gain.gain.value = 0.12;
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    
+    setTimeout(function() {
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    }, 200);
+    
+    setTimeout(function() {
+      osc.stop();
+    }, 250);
+  }
+  
+  playBusy();
+  var busyInterval = setInterval(function() {
+    playBusy();
+    if (count >= 4) clearInterval(busyInterval);
+  }, 400);
+}
+
+function stopAllCallSounds() {
+  if (dmCallState.ringtoneInterval) {
+    clearInterval(dmCallState.ringtoneInterval);
+    dmCallState.ringtoneInterval = null;
+  }
+  if (dmCallState.dialingInterval) {
+    clearInterval(dmCallState.dialingInterval);
+    dmCallState.dialingInterval = null;
+  }
+}
 
 // DM Call function
 function startDMCall(userId, withVideo) {
@@ -1835,6 +2023,9 @@ function startDMCall(userId, withVideo) {
     dmCallState.localStream = stream;
     dmCallState.active = true;
     
+    // Play dialing tone
+    playDialingTone();
+    
     // Show local video if video call
     if (withVideo) {
       var localVideo = qS('#dm-local-video');
@@ -1852,8 +2043,11 @@ function startDMCall(userId, withVideo) {
     // Timeout for no answer
     setTimeout(function() {
       if (dmCallState.active && !dmCallState.peerConnection) {
-        endDMCall();
-        showNotification(friendName + ' не отвечает');
+        playBusyTone();
+        setTimeout(function() {
+          endDMCall();
+          showNotification(friendName + ' не отвечает');
+        }, 1600);
       }
     }, 30000);
     
@@ -1864,6 +2058,9 @@ function startDMCall(userId, withVideo) {
 }
 
 function acceptDMCall(fromId, withVideo) {
+  // Stop ringtone
+  stopAllCallSounds();
+  
   var friend = state.friends.get(fromId);
   var friendName = friend ? friend.name : 'Пользователь';
   var friendAvatar = friend ? friend.avatar : null;
@@ -2019,6 +2216,9 @@ function handleDMCallSignal(fromId, signal) {
 }
 
 function startCallTimer() {
+  // Play connected sound
+  playCallConnected();
+  
   dmCallState.callDuration = 0;
   dmCallState.callTimer = setInterval(function() {
     dmCallState.callDuration++;
@@ -2032,6 +2232,14 @@ function startCallTimer() {
 }
 
 function endDMCall() {
+  // Stop all call sounds
+  stopAllCallSounds();
+  
+  // Play end sound if call was connected
+  if (dmCallState.callTimer) {
+    playCallEnded();
+  }
+  
   // Stop timer
   if (dmCallState.callTimer) {
     clearInterval(dmCallState.callTimer);
@@ -2151,12 +2359,10 @@ function showIncomingCall(fromId, fromName, fromAvatar, withVideo) {
   dmCallState.peerId = fromId;
   dmCallState.isVideoEnabled = withVideo;
   
-  openModal('incoming-call-modal');
+  // Play ringtone
+  playRingtone();
   
-  // Play ringtone sound (optional)
-  // var ringtone = new Audio('ringtone.mp3');
-  // ringtone.loop = true;
-  // ringtone.play();
+  openModal('incoming-call-modal');
 }
 
 function createPeerConnection(oderId) {
@@ -3859,6 +4065,10 @@ document.addEventListener('DOMContentLoaded', function() {
   var declineCallBtn = qS('#decline-call-btn');
   if (declineCallBtn) {
     declineCallBtn.onclick = function() {
+      // Stop ringtone
+      stopAllCallSounds();
+      playCallEnded();
+      
       if (dmCallState.peerId) {
         send({ type: 'dm_call_reject', to: dmCallState.peerId });
         dmCallState.peerId = null;
