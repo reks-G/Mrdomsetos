@@ -864,14 +864,33 @@ const handlers = {
     const srv = servers.get(serverId);
     if (!srv || srv.ownerId !== userId) return;
     
-    if (name) srv.name = name;
-    if (icon !== undefined) srv.icon = icon;
-    if (region) srv.region = region;
-    if (description !== undefined) srv.description = description;
-    if (privacy) srv.privacy = privacy;
+    const changes = [];
+    if (name && name !== srv.name) {
+      changes.push('название: ' + srv.name + ' → ' + name);
+      srv.name = name;
+    }
+    if (icon !== undefined && icon !== srv.icon) {
+      changes.push('иконка изменена');
+      srv.icon = icon;
+    }
+    if (region && region !== srv.region) {
+      changes.push('регион: ' + region);
+      srv.region = region;
+    }
+    if (description !== undefined && description !== srv.description) {
+      changes.push('описание изменено');
+      srv.description = description;
+    }
+    if (privacy && privacy !== srv.privacy) {
+      changes.push('приватность: ' + privacy);
+      srv.privacy = privacy;
+    }
+    
+    if (changes.length > 0) {
+      addAuditEntry(serverId, userId, 'server_update', 'Изменения: ' + changes.join(', '));
+    }
     saveAll();
     
-    addAuditEntry(serverId, userId, 'server_update', 'Настройки сервера обновлены');
     broadcastToServer(serverId, { type: 'server_updated', serverId, name: srv.name, icon: srv.icon, region: srv.region, description: srv.description, privacy: srv.privacy });
   },
 
@@ -908,8 +927,12 @@ const handlers = {
     const srv = servers.get(serverId);
     if (!srv || !canKick(serverId, userId) || memberId === srv.ownerId) return;
     
+    const memberAcc = getAccountById(memberId);
+    const memberName = memberAcc ? memberAcc.name : memberId;
+    
     srv.members.delete(memberId);
     delete srv.memberRoles[memberId];
+    addAuditEntry(serverId, userId, 'member_kick', 'Исключён участник: ' + memberName);
     saveAll();
     
     sendToUser(memberId, { type: 'server_left', serverId, kicked: true });
@@ -922,10 +945,14 @@ const handlers = {
     const srv = servers.get(serverId);
     if (!srv || !canBan(serverId, userId) || memberId === srv.ownerId) return;
     
+    const memberAcc = getAccountById(memberId);
+    const memberName = memberAcc ? memberAcc.name : memberId;
+    
     srv.members.delete(memberId);
     delete srv.memberRoles[memberId];
     if (!srv.bans) srv.bans = new Set();
     srv.bans.add(memberId);
+    addAuditEntry(serverId, userId, 'member_ban', 'Забанен участник: ' + memberName + (reason ? ' (' + reason + ')' : ''));
     saveAll();
     
     sendToUser(memberId, { type: 'server_left', serverId, banned: true, reason });
@@ -956,9 +983,11 @@ const handlers = {
     
     if (isVoice) {
       srv.voiceChannels.push(channel);
+      addAuditEntry(serverId, userId, 'channel_create', 'Создан голосовой канал: ' + channel.name);
     } else {
       srv.channels.push(channel);
       srv.messages[channelId] = [];
+      addAuditEntry(serverId, userId, 'channel_create', 'Создан текстовый канал: ' + channel.name);
     }
     saveAll();
     
@@ -1021,7 +1050,9 @@ const handlers = {
     const channels = isVoice ? srv.voiceChannels : srv.channels;
     const ch = channels.find(c => c.id === channelId);
     if (ch && name) {
+      const oldName = ch.name;
       ch.name = name;
+      addAuditEntry(serverId, userId, 'channel_update', 'Канал переименован: ' + oldName + ' → ' + name);
       saveAll();
       broadcastToServer(serverId, { type: 'channel_updated', serverId, channelId, name, isVoice });
     }
@@ -1033,11 +1064,17 @@ const handlers = {
     const srv = servers.get(serverId);
     if (!srv || !canManageChannel(serverId, userId)) return;
     
+    const channels = isVoice ? srv.voiceChannels : srv.channels;
+    const ch = channels.find(c => c.id === channelId);
+    const channelName = ch ? ch.name : channelId;
+    
     if (isVoice) {
       srv.voiceChannels = srv.voiceChannels.filter(c => c.id !== channelId);
+      addAuditEntry(serverId, userId, 'channel_delete', 'Удалён голосовой канал: ' + channelName);
     } else {
       srv.channels = srv.channels.filter(c => c.id !== channelId);
       delete srv.messages[channelId];
+      addAuditEntry(serverId, userId, 'channel_delete', 'Удалён текстовый канал: ' + channelName);
     }
     saveAll();
     
@@ -1120,7 +1157,7 @@ const handlers = {
 
   // Roles management
   create_role(ws, data) {
-    const { serverId, name, color, permissions } = data;
+    const { serverId, name, color, permissions, hoist, mentionable, icon } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
@@ -1132,16 +1169,20 @@ const handlers = {
       name: name || 'Новая роль',
       color: color || '#99aab5',
       position: maxPos - 1,
-      permissions: permissions || ['send_messages', 'read_messages']
+      permissions: permissions || ['send_messages', 'read_messages'],
+      hoist: hoist || false,
+      mentionable: mentionable || false,
+      icon: icon || null
     };
     srv.roles.push(role);
+    addAuditEntry(serverId, userId, 'role_create', 'Создана роль: ' + role.name);
     saveAll();
     
     broadcastToServer(serverId, { type: 'role_created', serverId, role });
   },
 
   update_role(ws, data) {
-    const { serverId, roleId, name, color, permissions } = data;
+    const { serverId, roleId, name, color, permissions, hoist, mentionable, icon } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
@@ -1149,9 +1190,14 @@ const handlers = {
     const role = srv.roles.find(r => r.id === roleId);
     if (!role || role.id === 'owner') return;
     
+    const oldName = role.name;
     if (name) role.name = name;
     if (color) role.color = color;
     if (permissions) role.permissions = permissions;
+    if (hoist !== undefined) role.hoist = hoist;
+    if (mentionable !== undefined) role.mentionable = mentionable;
+    if (icon !== undefined) role.icon = icon;
+    addAuditEntry(serverId, userId, 'role_update', 'Изменена роль: ' + oldName);
     saveAll();
     
     broadcastToServer(serverId, { type: 'role_updated', serverId, role });
@@ -1164,10 +1210,14 @@ const handlers = {
     if (!srv || !canManageRoles(serverId, userId)) return;
     if (roleId === 'owner' || roleId === 'default') return;
     
+    const role = srv.roles.find(r => r.id === roleId);
+    const roleName = role ? role.name : roleId;
+    
     srv.roles = srv.roles.filter(r => r.id !== roleId);
     Object.keys(srv.memberRoles).forEach(mid => {
       if (srv.memberRoles[mid] === roleId) srv.memberRoles[mid] = 'default';
     });
+    addAuditEntry(serverId, userId, 'role_delete', 'Удалена роль: ' + roleName);
     saveAll();
     
     broadcastToServer(serverId, { type: 'role_deleted', serverId, roleId });

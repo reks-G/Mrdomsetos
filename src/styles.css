@@ -4367,3 +4367,212 @@ textarea:focus {
 .category-header:hover .add-btn {
   opacity: 1;
 }
+
+/* DM Header Actions */
+.dm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dm-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dm-header-actions .icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.dm-header-actions .icon-btn:hover {
+  background: var(--bg-glass-hover);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.dm-header-actions .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Improved Roles List in Server Settings */
+.roles-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.roles-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.roles-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.roles-info svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.role-item:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-light);
+}
+
+.role-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.role-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.role-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.role-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.role-item:hover .role-actions {
+  opacity: 1;
+}
+
+.role-actions .btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Invites List Styling */
+.invites-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.invites-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.invites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invite-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.invite-item:hover {
+  background: var(--bg-glass-hover);
+}
+
+.invite-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.invite-code {
+  font-family: 'SF Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(168, 85, 247, 0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.invite-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.invite-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Offline title styling */
+.offline-title {
+  margin-top: 16px;
+  color: var(--text-muted);
+}
+
+/* Role details in list */
+.role-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.role-member-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Hidden online count since we show it dynamically */
+#online-count {
+  display: none;
+}

@@ -144,6 +144,15 @@ function processAuthSuccess(msg) {
     qS('#members-panel').classList.remove('visible');
     showView('friends-view');
   }
+  
+  // Check for pending invite from URL
+  var pendingInvite = localStorage.getItem('pendingInvite');
+  if (pendingInvite) {
+    localStorage.removeItem('pendingInvite');
+    setTimeout(function() {
+      send({ type: 'use_invite', code: pendingInvite });
+    }, 500);
+  }
 }
 
 function formatTime(ts) {
@@ -557,7 +566,9 @@ function handleMessage(msg) {
     },
     
     invite_created: function() {
-      qS('#invite-code-display').value = msg.code;
+      var baseUrl = window.location.origin + '?invite=';
+      var fullLink = baseUrl + msg.code;
+      qS('#invite-code-display').value = fullLink;
       openModal('invite-modal');
     },
     
@@ -1179,12 +1190,27 @@ function renderRoles() {
     return;
   }
   
-  rl.innerHTML = srv.roles.map(function(role) {
+  // Sort roles by position (higher position = higher priority)
+  var sortedRoles = srv.roles.slice().sort(function(a, b) {
+    return (b.position || 0) - (a.position || 0);
+  });
+  
+  rl.innerHTML = sortedRoles.map(function(role) {
     var isDefault = role.id === 'owner' || role.id === 'default';
+    var memberCount = Object.values(srv.memberRoles || {}).filter(function(r) { return r === role.id; }).length;
+    if (role.id === 'owner') memberCount = 1;
+    if (role.id === 'default') {
+      memberCount = (srv.members ? srv.members.length : 0) - Object.keys(srv.memberRoles || {}).length;
+      if (memberCount < 0) memberCount = 0;
+    }
+    
     return '<div class="role-item" data-id="' + role.id + '">' +
       '<div class="role-info">' +
       '<div class="role-color" style="background: ' + (role.color || '#99aab5') + '"></div>' +
-      '<span class="role-name">' + escapeHtml(role.name) + '</span>' +
+      '<div class="role-details">' +
+      '<span class="role-name" style="color: ' + (role.color || 'inherit') + '">' + escapeHtml(role.name) + '</span>' +
+      '<span class="role-member-count">' + memberCount + ' участник' + (memberCount === 1 ? '' : memberCount < 5 ? 'а' : 'ов') + '</span>' +
+      '</div>' +
       '</div>' +
       '<div class="role-actions">' +
       (isDefault ? '' : '<button class="btn secondary edit-role-btn" data-id="' + role.id + '">Изменить</button>') +
@@ -1702,6 +1728,25 @@ function leaveVoiceChannel() {
   state.voiceChannel = null;
   renderChannels();
   showView('chat-view');
+}
+
+// DM Call function
+function startDMCall(userId, withVideo) {
+  if (!userId) return;
+  
+  // For now, show a notification that DM calls are coming soon
+  // In a full implementation, this would create a private voice channel
+  var friend = state.friends.get(userId);
+  var friendName = friend ? friend.name : 'пользователем';
+  
+  showNotification('Звонок ' + friendName + (withVideo ? ' (видео)' : '') + ' - функция в разработке');
+  
+  // TODO: Implement DM calls with WebRTC
+  // This would involve:
+  // 1. Creating a private voice session
+  // 2. Sending call invitation to the other user
+  // 3. Setting up WebRTC peer connection
+  // 4. Showing call UI
 }
 
 function createPeerConnection(oderId) {
@@ -3072,6 +3117,16 @@ function signOut() {
 
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
+  // Check for invite code in URL
+  var urlParams = new URLSearchParams(window.location.search);
+  var inviteCode = urlParams.get('invite');
+  if (inviteCode) {
+    // Store invite code to use after login
+    localStorage.setItem('pendingInvite', inviteCode);
+    // Clean URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+  
   // Window controls (Electron)
   if (window.electronAPI) {
     var minBtn = qS('#minimize-btn');
@@ -3220,6 +3275,23 @@ document.addEventListener('DOMContentLoaded', function() {
     send({ type: 'dm', to: state.currentDM, text: text });
     input.value = '';
   }
+  
+  // DM Call buttons
+  var dmCallBtn = qS('#dm-call-btn');
+  if (dmCallBtn) {
+    dmCallBtn.onclick = function() {
+      if (!state.currentDM) return;
+      startDMCall(state.currentDM, false);
+    };
+  }
+  
+  var dmVideoBtn = qS('#dm-video-btn');
+  if (dmVideoBtn) {
+    dmVideoBtn.onclick = function() {
+      if (!state.currentDM) return;
+      startDMCall(state.currentDM, true);
+    };
+  }
 
   
   // Create server
@@ -3240,8 +3312,15 @@ document.addEventListener('DOMContentLoaded', function() {
   var useInviteBtn = qS('#use-invite-btn');
   if (useInviteBtn) {
     useInviteBtn.onclick = function() {
-      var code = qS('#invite-code').value.trim();
-      if (!code) return;
+      var input = qS('#invite-code').value.trim();
+      if (!input) return;
+      // Extract code from full URL if needed
+      var code = input;
+      if (input.includes('?invite=')) {
+        code = input.split('?invite=')[1];
+      } else if (input.includes('invite=')) {
+        code = input.split('invite=')[1];
+      }
       send({ type: 'use_invite', code: code });
     };
   }
@@ -3250,8 +3329,16 @@ document.addEventListener('DOMContentLoaded', function() {
   if (inviteCodeInput) {
     inviteCodeInput.onkeypress = function(e) {
       if (e.key === 'Enter') {
-        var code = inviteCodeInput.value.trim();
-        if (code) send({ type: 'use_invite', code: code });
+        var input = inviteCodeInput.value.trim();
+        if (!input) return;
+        // Extract code from full URL if needed
+        var code = input;
+        if (input.includes('?invite=')) {
+          code = input.split('?invite=')[1];
+        } else if (input.includes('invite=')) {
+          code = input.split('invite=')[1];
+        }
+        send({ type: 'use_invite', code: code });
       }
     };
   }
@@ -4631,14 +4718,17 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
+    var baseUrl = window.location.origin + '?invite=';
     var h = '';
     Object.entries(invites).forEach(function(entry) {
       var code = entry[0];
       var data = entry[1];
-      h += '<div class="invite-item" data-code="' + code + '">';
+      var fullLink = baseUrl + code;
+      var createdDate = data.createdAt ? new Date(data.createdAt).toLocaleDateString('ru-RU') : 'Неизвестно';
+      h += '<div class="invite-item" data-code="' + code + '" data-link="' + fullLink + '">';
       h += '<div class="invite-info">';
-      h += '<div class="invite-code">' + code + '</div>';
-      h += '<div class="invite-meta">Создан: ' + (data.createdBy || 'Неизвестно') + '</div>';
+      h += '<div class="invite-code">' + fullLink + '</div>';
+      h += '<div class="invite-meta">Создан: ' + createdDate + '</div>';
       h += '</div>';
       h += '<div class="invite-actions">';
       h += '<button class="btn secondary copy-invite-btn">Копировать</button>';
@@ -4652,9 +4742,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Bind handlers
     list.querySelectorAll('.copy-invite-btn').forEach(function(btn) {
       btn.onclick = function() {
-        var code = btn.closest('.invite-item').dataset.code;
-        navigator.clipboard.writeText(code);
-        showNotification('Код скопирован');
+        var link = btn.closest('.invite-item').dataset.link;
+        navigator.clipboard.writeText(link);
+        showNotification('Ссылка скопирована');
       };
     });
     
