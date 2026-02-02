@@ -1714,6 +1714,9 @@ function joinVoiceChannel(id) {
     .then(function(stream) {
       localStream = stream;
       
+      // Play join sound
+      playVoiceJoin();
+      
       // Setup audio analyser for local user speaking detection
       setupAudioAnalyser(stream, state.userId);
       startSpeakingDetection();
@@ -1743,6 +1746,9 @@ function joinVoiceChannel(id) {
 }
 
 function leaveVoiceChannel() {
+  // Play leave sound
+  playVoiceLeave();
+  
   // Stop speaking detection
   stopSpeakingDetection();
   
@@ -1807,131 +1813,156 @@ function getAudioContext() {
   if (!callSoundContext) {
     callSoundContext = new (window.AudioContext || window.webkitAudioContext)();
   }
+  if (callSoundContext.state === 'suspended') {
+    callSoundContext.resume();
+  }
   return callSoundContext;
 }
 
+// Musical ringtone - pleasant melody
 function playRingtone() {
   stopAllCallSounds();
   var ctx = getAudioContext();
   
-  function playRing() {
-    // Two-tone ringtone
-    var osc1 = ctx.createOscillator();
-    var osc2 = ctx.createOscillator();
-    var gain = ctx.createGain();
+  // Musical notes (C major arpeggio pattern)
+  var melody = [
+    { freq: 523.25, dur: 0.15 },  // C5
+    { freq: 659.25, dur: 0.15 },  // E5
+    { freq: 783.99, dur: 0.15 },  // G5
+    { freq: 1046.50, dur: 0.3 },  // C6
+    { freq: 783.99, dur: 0.15 },  // G5
+    { freq: 659.25, dur: 0.15 },  // E5
+  ];
+  
+  function playMelody() {
+    var time = ctx.currentTime;
     
-    osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc1.frequency.value = 440; // A4
-    osc2.frequency.value = 480; // B4
-    
-    gain.gain.value = 0.15;
-    
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-    
-    osc1.start();
-    osc2.start();
-    
-    // Ring pattern: on 1s, off 0.5s
-    setTimeout(function() {
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-    }, 800);
-    
-    setTimeout(function() {
-      osc1.stop();
-      osc2.stop();
-    }, 1000);
+    melody.forEach(function(note) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.value = note.freq;
+      
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(0.15, time + 0.02);
+      gain.gain.setValueAtTime(0.15, time + note.dur - 0.03);
+      gain.gain.linearRampToValueAtTime(0, time + note.dur);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(time);
+      osc.stop(time + note.dur);
+      
+      time += note.dur;
+    });
   }
   
-  playRing();
-  dmCallState.ringtoneInterval = setInterval(playRing, 1500);
+  playMelody();
+  dmCallState.ringtoneInterval = setInterval(playMelody, 1800);
 }
 
+// Dialing tone - soft pulsing
 function playDialingTone() {
   stopAllCallSounds();
   var ctx = getAudioContext();
   
   function playBeep() {
     var osc = ctx.createOscillator();
+    var osc2 = ctx.createOscillator();
     var gain = ctx.createGain();
     
     osc.type = 'sine';
-    osc.frequency.value = 425; // Standard dial tone
+    osc2.type = 'sine';
+    osc.frequency.value = 440;
+    osc2.frequency.value = 480;
     
-    gain.gain.value = 0.1;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime + 0.9);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1);
+    
+    osc.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    osc2.start();
+    
+    setTimeout(function() {
+      osc.stop();
+      osc2.stop();
+    }, 1000);
+  }
+  
+  playBeep();
+  dmCallState.dialingInterval = setInterval(playBeep, 3500);
+}
+
+// Call connected - pleasant chime
+function playCallConnected() {
+  stopAllCallSounds();
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Two-note ascending chime
+  var notes = [
+    { freq: 880, start: 0, dur: 0.15 },
+    { freq: 1318.51, start: 0.1, dur: 0.25 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.12, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
     
     osc.connect(gain);
     gain.connect(ctx.destination);
     
-    osc.start();
-    
-    setTimeout(function() {
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-    }, 400);
-    
-    setTimeout(function() {
-      osc.stop();
-    }, 500);
-  }
-  
-  playBeep();
-  dmCallState.dialingInterval = setInterval(playBeep, 3000);
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
 }
 
-function playCallConnected() {
-  stopAllCallSounds();
-  var ctx = getAudioContext();
-  
-  var osc = ctx.createOscillator();
-  var gain = ctx.createGain();
-  
-  osc.type = 'sine';
-  osc.frequency.value = 600;
-  
-  gain.gain.value = 0.12;
-  
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  
-  osc.start();
-  
-  // Quick ascending tone
-  osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.15);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-  
-  setTimeout(function() {
-    osc.stop();
-  }, 250);
-}
-
+// Call ended / disconnect - descending tone
 function playCallEnded() {
   stopAllCallSounds();
   var ctx = getAudioContext();
+  var time = ctx.currentTime;
   
-  var osc = ctx.createOscillator();
-  var gain = ctx.createGain();
+  // Two descending notes
+  var notes = [
+    { freq: 659.25, start: 0, dur: 0.15 },
+    { freq: 440, start: 0.12, dur: 0.2 }
+  ];
   
-  osc.type = 'sine';
-  osc.frequency.value = 480;
-  
-  gain.gain.value = 0.12;
-  
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  
-  osc.start();
-  
-  // Descending tone
-  osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.3);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-  
-  setTimeout(function() {
-    osc.stop();
-  }, 400);
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.1, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
 }
 
+// Busy tone
 function playBusyTone() {
   stopAllCallSounds();
   var ctx = getAudioContext();
@@ -1947,20 +1978,15 @@ function playBusyTone() {
     osc.type = 'sine';
     osc.frequency.value = 480;
     
-    gain.gain.value = 0.12;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime + 0.2);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
     
     osc.connect(gain);
     gain.connect(ctx.destination);
     
     osc.start();
-    
-    setTimeout(function() {
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-    }, 200);
-    
-    setTimeout(function() {
-      osc.stop();
-    }, 250);
+    setTimeout(function() { osc.stop(); }, 250);
   }
   
   playBusy();
@@ -1968,6 +1994,167 @@ function playBusyTone() {
     playBusy();
     if (count >= 4) clearInterval(busyInterval);
   }, 400);
+}
+
+// Voice channel join sound
+function playVoiceJoin() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Ascending two-note chime
+  var notes = [
+    { freq: 523.25, start: 0, dur: 0.12 },
+    { freq: 783.99, start: 0.08, dur: 0.18 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.1, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
+// Voice channel leave sound
+function playVoiceLeave() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Descending two-note
+  var notes = [
+    { freq: 783.99, start: 0, dur: 0.12 },
+    { freq: 523.25, start: 0.08, dur: 0.18 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.08, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
+// Mute sound - low click
+function playMuteSound() {
+  var ctx = getAudioContext();
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 350;
+  
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start();
+  setTimeout(function() { osc.stop(); }, 100);
+}
+
+// Unmute sound - higher click
+function playUnmuteSound() {
+  var ctx = getAudioContext();
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 500;
+  
+  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start();
+  setTimeout(function() { osc.stop(); }, 100);
+}
+
+// Screen share start sound - notification chime
+function playScreenShareStart() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Three ascending notes
+  var notes = [
+    { freq: 587.33, start: 0, dur: 0.1 },     // D5
+    { freq: 739.99, start: 0.08, dur: 0.1 },  // F#5
+    { freq: 880, start: 0.16, dur: 0.2 }      // A5
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.1, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
+// Screen share stop sound
+function playScreenShareStop() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Two descending notes
+  var notes = [
+    { freq: 739.99, start: 0, dur: 0.1 },
+    { freq: 523.25, start: 0.08, dur: 0.15 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.08, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
 }
 
 function stopAllCallSounds() {
@@ -2293,6 +2480,13 @@ function toggleDMCallMute() {
   dmCallState.localStream.getAudioTracks().forEach(function(track) {
     track.enabled = !dmCallState.isMuted;
   });
+  
+  // Play mute/unmute sound
+  if (dmCallState.isMuted) {
+    playMuteSound();
+  } else {
+    playUnmuteSound();
+  }
   
   var btn = qS('#dm-call-mic');
   if (btn) {
@@ -2785,6 +2979,14 @@ function toggleMute() {
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       var muted = !audioTrack.enabled;
+      
+      // Play mute/unmute sound
+      if (muted) {
+        playMuteSound();
+      } else {
+        playUnmuteSound();
+      }
+      
       send({ type: 'voice_mute', muted: muted });
       return muted;
     }
@@ -2820,6 +3022,7 @@ function toggleScreenShare() {
     var voiceScreenBtn = qS('#voice-screen');
     if (voiceScreenBtn) voiceScreenBtn.classList.remove('active');
     send({ type: 'voice_screen', screen: false });
+    playScreenShareStop();
     showNotification('Демонстрация экрана остановлена');
   } else {
     // Start screen sharing
@@ -2969,6 +3172,9 @@ function setupScreenShareStream(screenStream) {
   
   // Show local preview
   showLocalScreenPreview(screenStream);
+  
+  // Play screen share start sound
+  playScreenShareStart();
   
   // Add screen tracks to all peer connections
   var videoTrack = screenStream.getVideoTracks()[0];
