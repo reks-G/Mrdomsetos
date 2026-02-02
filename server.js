@@ -1502,11 +1502,22 @@ const handlers = {
       }
     }
     
+    const users = getVoiceUsers(serverId, channelId);
+    
+    // Send to all users in server
     broadcastToServer(serverId, {
       type: 'voice_state_update',
       serverId,
       channelId,
-      users: getVoiceUsers(serverId, channelId)
+      users
+    });
+    
+    // Also send directly to the joining user to ensure they get the update
+    send(ws, {
+      type: 'voice_state_update',
+      serverId,
+      channelId,
+      users
     });
   },
 

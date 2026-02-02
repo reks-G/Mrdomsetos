@@ -730,8 +730,12 @@ function handleMessage(msg) {
       
       // Update voice users display
       if (state.currentServer === msg.serverId) {
-        renderVoiceUsers(msg.channelId, msg.users);
         renderChannels();
+        
+        // Render voice users if we're in this channel
+        if (state.voiceChannel === msg.channelId) {
+          renderVoiceUsers(msg.channelId, msg.users);
+        }
         
         // Initiate calls to new users in the channel
         // Only the user with "lower" ID initiates to avoid glare (both calling each other)
@@ -1169,7 +1173,10 @@ function renderDMList() {
 
 function renderVoiceUsers(channelId, users) {
   var vu = qS('#voice-users');
-  if (!vu || state.voiceChannel !== channelId) return;
+  if (!vu) return;
+  
+  // Only render if we're in this channel
+  if (state.voiceChannel !== channelId) return;
   
   // Save screen share if exists
   var screenShare = qS('#local-screen-preview-container');
@@ -1843,6 +1850,16 @@ function joinVoiceChannel(id) {
       if (screenBtn) screenBtn.classList.remove('active');
       state.screenSharing = false;
       
+      // Reset mic button state (unmuted by default)
+      var micBtn = qS('#voice-mic');
+      if (micBtn) {
+        micBtn.classList.remove('muted');
+        var micOn = micBtn.querySelector('.mic-on');
+        var micOff = micBtn.querySelector('.mic-off');
+        if (micOn) micOn.style.display = 'block';
+        if (micOff) micOff.style.display = 'none';
+      }
+      
       send({ type: 'voice_join', channelId: id, serverId: state.currentServer });
       renderChannels();
       
@@ -1850,6 +1867,12 @@ function joinVoiceChannel(id) {
       var ch = srv ? srv.voiceChannels.find(function(c) { return c.id === id; }) : null;
       qS('#voice-name').textContent = ch ? ch.name : 'Голосовой';
       showView('voice-view');
+      
+      // Render voice users if we already have data
+      var existingUsers = state.voiceUsers.get(id);
+      if (existingUsers) {
+        renderVoiceUsers(id, existingUsers);
+      }
     })
     .catch(function(err) {
       console.error('Microphone error:', err);
