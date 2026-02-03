@@ -140,24 +140,28 @@ async function initDB() {
 async function migrateReksEmail() {
   if (!pool) return;
   
-  const oldEmail = 'reks';
-  const newEmail = 'kabanqwefordora@gmail.com';
+  // Force reset password for reks account
+  console.log('Checking reks account...');
+  console.log('All accounts:', [...accounts.keys()]);
   
-  // Reset password for reks account to "reks"
-  if (accounts.has(oldEmail)) {
-    const acc = accounts.get(oldEmail);
-    const newPassHash = require('crypto').createHash('sha256').update('reks').digest('hex');
-    acc.password = newPassHash;
-    console.log('Password reset for reks account');
-    
-    try {
-      await pool.query(
-        'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
-        [oldEmail, JSON.parse(JSON.stringify(acc))]
-      );
-      console.log('Password saved to DB');
-    } catch (e) {
-      console.error('Password reset error:', e.message);
+  for (const [email, acc] of accounts) {
+    if (email === 'reks' || acc.name === 'reks') {
+      const crypto = require('crypto');
+      const newPassHash = crypto.createHash('sha256').update('reks').digest('hex');
+      console.log('Found reks account, email key:', email);
+      console.log('Old password hash:', acc.password?.substring(0, 20) + '...');
+      console.log('New password hash:', newPassHash.substring(0, 20) + '...');
+      acc.password = newPassHash;
+      
+      try {
+        await pool.query(
+          'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
+          [email, JSON.parse(JSON.stringify(acc))]
+        );
+        console.log('Password reset SUCCESS for:', email);
+      } catch (e) {
+        console.error('Password reset error:', e.message);
+      }
     }
   }
 }
