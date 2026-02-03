@@ -1865,6 +1865,21 @@ function joinVoiceChannel(id) {
         userMicBtn.classList.remove('muted');
       }
       
+      // Optimistic update - add self to voice users immediately
+      var currentUsers = state.voiceUsers.get(id) || [];
+      var selfInList = currentUsers.some(function(u) { return u.id === state.userId; });
+      if (!selfInList) {
+        currentUsers.push({
+          id: state.userId,
+          name: state.username,
+          avatar: state.userAvatar,
+          muted: false,
+          video: false,
+          screen: false
+        });
+        state.voiceUsers.set(id, currentUsers);
+      }
+      
       send({ type: 'voice_join', channelId: id, serverId: state.currentServer });
       renderChannels();
       
@@ -1873,11 +1888,8 @@ function joinVoiceChannel(id) {
       qS('#voice-name').textContent = ch ? ch.name : 'Голосовой';
       showView('voice-view');
       
-      // Render voice users if we already have data
-      var existingUsers = state.voiceUsers.get(id);
-      if (existingUsers) {
-        renderVoiceUsers(id, existingUsers);
-      }
+      // Render voice users with self included
+      renderVoiceUsers(id, state.voiceUsers.get(id));
     })
     .catch(function(err) {
       console.error('Microphone error:', err);
