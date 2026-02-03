@@ -99,6 +99,7 @@ function processAuthSuccess(msg) {
   state.userAvatar = msg.user.avatar;
   state.userStatus = msg.user.status || 'online';
   state.customStatus = msg.user.customStatus;
+  state.userCreatedAt = msg.user.createdAt;
   state.isGuest = msg.isGuest || false;
   
   if (msg.servers) {
@@ -3998,7 +3999,8 @@ function showUserProfile(userId) {
       name: state.username,
       avatar: state.userAvatar,
       status: 'online',
-      customStatus: state.customStatus
+      customStatus: state.customStatus,
+      createdAt: state.userCreatedAt
     };
   }
   
@@ -4058,7 +4060,13 @@ function showUserProfile(userId) {
   // Set created date
   var createdEl = qS('#profile-created');
   if (createdEl) {
-    createdEl.textContent = user.createdAt ? new Date(user.createdAt).toLocaleDateString('ru-RU') : '—';
+    if (user.createdAt) {
+      var date = new Date(user.createdAt);
+      var options = { day: 'numeric', month: 'long', year: 'numeric' };
+      createdEl.textContent = date.toLocaleDateString('ru-RU', options);
+    } else {
+      createdEl.textContent = '—';
+    }
   }
   
   // Set mutual servers

@@ -508,7 +508,8 @@ function getUserData(userId) {
     name: acc.name,
     avatar: acc.avatar,
     status: isOnline ? (acc.status || 'online') : 'offline',
-    customStatus: acc.customStatus || null
+    customStatus: acc.customStatus || null,
+    createdAt: acc.createdAt || null
   } : null;
 }
 
@@ -608,7 +609,7 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, status: 'online' },
+      user: { name: account.name, avatar: account.avatar, status: 'online', createdAt: account.createdAt },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -633,7 +634,7 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, status: account.status || 'online', customStatus: account.customStatus },
+      user: { name: account.name, avatar: account.avatar, status: account.status || 'online', customStatus: account.customStatus, createdAt: account.createdAt },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
