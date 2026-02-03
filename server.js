@@ -773,10 +773,12 @@ const handlers = {
 
   login(ws, data) {
     const { email, password, loginCode } = data;
-    const account = accounts.get(email);
     
     // Debug: log all account emails
+    console.log('Login attempt for:', email);
     console.log('Available accounts:', [...accounts.keys()]);
+    
+    const account = accounts.get(email);
     
     if (!account || account.password !== hash(password)) {
       send(ws, { type: 'auth_error', message: 'Неверный email или пароль' });
