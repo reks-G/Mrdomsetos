@@ -3018,19 +3018,24 @@ body::before {
 .profile-role {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
+  gap: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  border-radius: 100px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--role-color);
+  border: 1.5px solid var(--role-color);
+  transition: all 0.2s ease;
+}
+
+.profile-role:hover {
+  background: color-mix(in srgb, var(--role-color) 15%, transparent);
 }
 
 .profile-role .role-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--role-color);
   flex-shrink: 0;
