@@ -34,9 +34,16 @@ if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
 
 // Store verification codes (userId -> { code, email, expires })
 const verificationCodes = new Map();
+const loginVerificationCodes = new Map();
 
 function generateVerificationCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function maskEmail(email) {
+  const [name, domain] = email.split('@');
+  const masked = name.slice(0, 2) + '***' + name.slice(-1);
+  return masked + '@' + domain;
 }
 
 async function sendVerificationEmail(email, code) {
@@ -730,7 +737,7 @@ const handlers = {
   },
 
   login(ws, data) {
-    const { email, password } = data;
+    const { email, password, loginCode } = data;
     const account = accounts.get(email);
     
     if (!account || account.password !== hash(password)) {
@@ -748,6 +755,45 @@ const handlers = {
       // Generate tag for old accounts that don't have one
       account.tag = genTag();
       saveAll();
+    }
+    
+    // Check if 2FA is required (has verified email)
+    if (account.verifiedEmail && account.emailVerified) {
+      // If no code provided, send one
+      if (!loginCode) {
+        const code = generateVerificationCode();
+        loginVerificationCodes.set(email, {
+          code,
+          expires: Date.now() + 10 * 60 * 1000
+        });
+        
+        sendVerificationEmail(account.verifiedEmail, code).then(success => {
+          console.log('Login 2FA code for', email, 'is', code);
+          send(ws, { 
+            type: 'login_2fa_required', 
+            email,
+            maskedEmail: maskEmail(account.verifiedEmail),
+            devCode: success ? undefined : code
+          });
+        });
+        return;
+      }
+      
+      // Verify the code
+      const verification = loginVerificationCodes.get(email);
+      if (!verification || Date.now() > verification.expires) {
+        send(ws, { type: 'auth_error', message: 'Код истёк, попробуйте снова' });
+        loginVerificationCodes.delete(email);
+        return;
+      }
+      
+      if (verification.code !== loginCode) {
+        send(ws, { type: 'auth_error', message: 'Неверный код подтверждения' });
+        return;
+      }
+      
+      // Code verified, clean up
+      loginVerificationCodes.delete(email);
     }
     
     const userId = account.id;
@@ -1791,6 +1837,29 @@ const handlers = {
         console.log('Dev mode: new verification code is', code);
         send(ws, { type: 'verification_sent', email: verification.email, devCode: transporter ? undefined : code });
       }
+    });
+  },
+
+  resend_login_code(ws, data) {
+    const { email } = data;
+    const account = accounts.get(email);
+    if (!account || !account.verifiedEmail) {
+      send(ws, { type: 'auth_error', message: 'Аккаунт не найден' });
+      return;
+    }
+    
+    const code = generateVerificationCode();
+    loginVerificationCodes.set(email, {
+      code,
+      expires: Date.now() + 10 * 60 * 1000
+    });
+    
+    sendVerificationEmail(account.verifiedEmail, code).then(success => {
+      console.log('Login 2FA code resent for', email, 'is', code);
+      send(ws, { 
+        type: 'login_code_resent',
+        devCode: success ? undefined : code
+      });
     });
   },
 

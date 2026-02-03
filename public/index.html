@@ -547,6 +547,26 @@
         <p class="auth-footer">Уже есть аккаунт? <a href="#" id="show-login">Войти</a></p>
         <p class="error" id="reg-error"></p>
       </div>
+      
+      <div class="auth-box hidden" id="login-2fa-box">
+        <h1>Подтверждение входа</h1>
+        <p class="auth-subtitle">Код отправлен на <span id="login-2fa-email">***@***.com</span></p>
+        <div class="auth-form">
+          <p class="verify-hint">Введите 6-значный код из письма</p>
+          <div class="code-inputs login-code-inputs">
+            <input type="text" maxlength="1" class="code-input" data-index="0">
+            <input type="text" maxlength="1" class="code-input" data-index="1">
+            <input type="text" maxlength="1" class="code-input" data-index="2">
+            <input type="text" maxlength="1" class="code-input" data-index="3">
+            <input type="text" maxlength="1" class="code-input" data-index="4">
+            <input type="text" maxlength="1" class="code-input" data-index="5">
+          </div>
+          <button class="auth-btn" id="verify-login-btn">Подтвердить</button>
+          <button class="auth-btn secondary" id="resend-login-code-btn">Отправить код снова</button>
+        </div>
+        <p class="auth-footer"><a href="#" id="back-to-login">← Назад к входу</a></p>
+        <p class="error" id="login-2fa-error"></p>
+      </div>
     </div>
   </div>
 

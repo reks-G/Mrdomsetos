@@ -44,7 +44,9 @@ var state = {
   creatingVoice: false,
   forwardingMessage: null,
   searchResults: [],
-  settings: { notifications: true, sounds: true, privacy: 'everyone' }
+  settings: { notifications: true, sounds: true, privacy: 'everyone' },
+  pending2FAEmail: null,
+  pending2FAPassword: null
 };
 
 // ============ UTILS ============
@@ -274,10 +276,47 @@ function handleMessage(msg) {
       localStorage.removeItem('lastEmail');
       localStorage.removeItem('lastPwd');
       var loginBox = qS('#login-box');
-      if (loginBox && !loginBox.classList.contains('hidden')) {
+      var login2faBox = qS('#login-2fa-box');
+      
+      // If 2FA box is visible, show error there
+      if (login2faBox && !login2faBox.classList.contains('hidden')) {
+        qS('#login-2fa-error').textContent = msg.message || 'Ошибка';
+      } else if (loginBox && !loginBox.classList.contains('hidden')) {
         qS('#login-error').textContent = msg.message || 'Ошибка';
       } else {
         qS('#reg-error').textContent = msg.message || 'Ошибка';
+      }
+    },
+    
+    login_2fa_required: function() {
+      hideAuthLoading();
+      // Store credentials for 2FA verification
+      state.pending2FAEmail = msg.email;
+      state.pending2FAPassword = localStorage.getItem('lastPwd');
+      
+      // Show 2FA form
+      qS('#login-box').classList.add('hidden');
+      qS('#register-box').classList.add('hidden');
+      qS('#login-2fa-box').classList.remove('hidden');
+      qS('#login-2fa-email').textContent = msg.maskedEmail;
+      qS('#login-2fa-error').textContent = '';
+      
+      // Clear code inputs
+      qSA('#login-2fa-box .code-input').forEach(function(inp) { inp.value = ''; });
+      qS('#login-2fa-box .code-input[data-index="0"]').focus();
+      
+      // Show dev code if available
+      if (msg.devCode) {
+        console.log('Login 2FA code:', msg.devCode);
+        showNotification('Dev код: ' + msg.devCode);
+      }
+    },
+    
+    login_code_resent: function() {
+      showNotification('Код отправлен повторно');
+      if (msg.devCode) {
+        console.log('Login 2FA code:', msg.devCode);
+        showNotification('Dev код: ' + msg.devCode);
       }
     },
     
@@ -4587,6 +4626,75 @@ document.addEventListener('DOMContentLoaded', function() {
     qS('#register-box').classList.add('hidden');
     qS('#login-box').classList.remove('hidden');
   };
+  
+  // 2FA Login handlers
+  var backToLogin = qS('#back-to-login');
+  if (backToLogin) {
+    backToLogin.onclick = function(e) {
+      e.preventDefault();
+      qS('#login-2fa-box').classList.add('hidden');
+      qS('#login-box').classList.remove('hidden');
+      localStorage.removeItem('lastEmail');
+      localStorage.removeItem('lastPwd');
+    };
+  }
+  
+  var verifyLoginBtn = qS('#verify-login-btn');
+  if (verifyLoginBtn) {
+    verifyLoginBtn.onclick = function() {
+      var code = '';
+      qSA('#login-2fa-box .code-input').forEach(function(inp) {
+        code += inp.value;
+      });
+      if (code.length !== 6) {
+        qS('#login-2fa-error').textContent = 'Введите 6-значный код';
+        return;
+      }
+      send({ 
+        type: 'login', 
+        email: state.pending2FAEmail, 
+        password: state.pending2FAPassword,
+        loginCode: code
+      });
+    };
+  }
+  
+  var resendLoginCodeBtn = qS('#resend-login-code-btn');
+  if (resendLoginCodeBtn) {
+    resendLoginCodeBtn.onclick = function() {
+      send({ type: 'resend_login_code', email: state.pending2FAEmail });
+    };
+  }
+  
+  // 2FA code input handling
+  qSA('#login-2fa-box .code-input').forEach(function(input, index) {
+    input.oninput = function(e) {
+      var value = e.target.value;
+      if (value.length === 1) {
+        var next = qS('#login-2fa-box .code-input[data-index="' + (index + 1) + '"]');
+        if (next) next.focus();
+      }
+    };
+    input.onkeydown = function(e) {
+      if (e.key === 'Backspace' && !input.value && index > 0) {
+        var prev = qS('#login-2fa-box .code-input[data-index="' + (index - 1) + '"]');
+        if (prev) prev.focus();
+      }
+      if (e.key === 'Enter') {
+        verifyLoginBtn.click();
+      }
+    };
+    input.onpaste = function(e) {
+      e.preventDefault();
+      var paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+      if (paste.length === 6) {
+        qSA('#login-2fa-box .code-input').forEach(function(inp, i) {
+          inp.value = paste[i] || '';
+        });
+        verifyLoginBtn.click();
+      }
+    };
+  });
   
   // Show/hide password
   var showLoginPass = qS('#show-login-pass');
