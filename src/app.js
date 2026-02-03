@@ -3983,17 +3983,39 @@ function showSelfContext(x, y) {
 
 function showUserProfile(userId) {
   var modal = qS('#user-profile-modal');
-  if (!modal) return;
+  if (!modal) {
+    console.error('User profile modal not found');
+    return;
+  }
   
   // Get user data
   var user = null;
-  var srv = state.servers.get(state.currentServer);
-  if (srv && srv.membersData) {
-    user = srv.membersData.find(function(m) { return m.id === userId; });
+  
+  // Check if it's current user
+  if (userId === state.userId) {
+    user = {
+      id: state.userId,
+      name: state.username,
+      avatar: state.userAvatar,
+      status: 'online',
+      customStatus: state.customStatus
+    };
   }
+  
+  // Try to find in server members
+  if (!user) {
+    var srv = state.servers.get(state.currentServer);
+    if (srv && srv.membersData) {
+      user = srv.membersData.find(function(m) { return m.id === userId; });
+    }
+  }
+  
+  // Try to find in friends
   if (!user) {
     user = state.friends.get(userId);
   }
+  
+  // Fallback
   if (!user) {
     user = { id: userId, name: 'Пользователь', status: 'offline' };
   }
@@ -4059,8 +4081,16 @@ function showUserProfile(userId) {
     }
   }
   
-  // Bind action buttons
+  // Bind action buttons (hide for self)
   var dmBtn = qS('#profile-dm-btn');
+  var callBtn = qS('#profile-call-btn');
+  var friendBtn = qS('#profile-friend-btn');
+  var actionsContainer = qS('.profile-actions');
+  
+  if (actionsContainer) {
+    actionsContainer.style.display = userId === state.userId ? 'none' : 'flex';
+  }
+  
   if (dmBtn) {
     dmBtn.onclick = function() {
       closeModal('user-profile-modal');
@@ -4068,7 +4098,6 @@ function showUserProfile(userId) {
     };
   }
   
-  var callBtn = qS('#profile-call-btn');
   if (callBtn) {
     callBtn.onclick = function() {
       closeModal('user-profile-modal');
@@ -4076,7 +4105,6 @@ function showUserProfile(userId) {
     };
   }
   
-  var friendBtn = qS('#profile-friend-btn');
   if (friendBtn) {
     friendBtn.onclick = function() {
       send({ type: 'friend_request', to: userId });
