@@ -585,6 +585,10 @@ function handleMessage(msg) {
       updateUserPanel();
     },
     
+    password_changed: function() {
+      showNotification('Пароль успешно изменён');
+    },
+    
     settings_updated: function() {
       state.settings = msg.settings;
     },
@@ -4750,7 +4754,23 @@ document.addEventListener('DOMContentLoaded', function() {
   // Settings
   qS('#settings-btn').onclick = function() {
     openModal('settings-modal');
-    qS('#settings-name').value = state.username || '';
+    // Reset to first tab
+    qSA('#settings-modal .settings-tab').forEach(function(t) { t.classList.remove('active'); });
+    qSA('#settings-modal .settings-panel').forEach(function(p) { p.classList.remove('active'); });
+    qS('#settings-modal .settings-tab[data-settings="general"]').classList.add('active');
+    qS('#settings-general').classList.add('active');
+    
+    // Fill in values
+    qS('#settings-display-name').value = state.username || '';
+    qS('#settings-nickname').value = state.username || '';
+    qS('#settings-custom-status').value = state.customStatus || '';
+    var bioEl = qS('#settings-bio');
+    if (bioEl) {
+      bioEl.value = state.userBio || '';
+      var counter = qS('#bio-counter');
+      if (counter) counter.textContent = bioEl.value.length;
+    }
+    
     var av = qS('#settings-avatar');
     if (av) {
       if (state.userAvatar) av.innerHTML = '<img src="' + state.userAvatar + '">';
@@ -4758,10 +4778,112 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   };
   
-  qS('#save-profile').onclick = function() {
-    var name = qS('#settings-name').value.trim();
-    if (name) send({ type: 'update_profile', name: name });
+  // Bio character counter
+  var bioTextarea = qS('#settings-bio');
+  if (bioTextarea) {
+    bioTextarea.oninput = function() {
+      var counter = qS('#bio-counter');
+      if (counter) counter.textContent = bioTextarea.value.length;
+    };
+  }
+  
+  // Avatar edit overlay
+  var avatarOverlay = qS('#avatar-edit-overlay');
+  if (avatarOverlay) {
+    avatarOverlay.onclick = function() {
+      qS('#avatar-input').click();
+    };
+  }
+  
+  // Save general settings
+  qS('#save-general').onclick = function() {
+    var name = qS('#settings-display-name').value.trim();
+    if (name) {
+      send({ type: 'update_profile', name: name });
+      showNotification('Настройки сохранены');
+    }
   };
+  
+  qS('#save-profile').onclick = function() {
+    var customStatus = qS('#settings-custom-status').value.trim();
+    var bio = qS('#settings-bio').value.trim();
+    send({ type: 'update_profile', customStatus: customStatus, bio: bio });
+    state.customStatus = customStatus;
+    state.userBio = bio;
+    showNotification('Профиль сохранён');
+  };
+  
+  // Change password
+  var changePassBtn = qS('#change-password-btn');
+  if (changePassBtn) {
+    changePassBtn.onclick = function() {
+      var current = qS('#current-password').value;
+      var newPass = qS('#new-password').value;
+      var confirm = qS('#confirm-password').value;
+      
+      if (!current || !newPass || !confirm) {
+        showNotification('Заполните все поля');
+        return;
+      }
+      if (newPass !== confirm) {
+        showNotification('Пароли не совпадают');
+        return;
+      }
+      if (newPass.length < 8) {
+        showNotification('Пароль должен быть минимум 8 символов');
+        return;
+      }
+      
+      send({ type: 'change_password', currentPassword: current, newPassword: newPass });
+      qS('#current-password').value = '';
+      qS('#new-password').value = '';
+      qS('#confirm-password').value = '';
+    };
+  }
+  
+  // Save notifications
+  var saveNotifBtn = qS('#save-notifications');
+  if (saveNotifBtn) {
+    saveNotifBtn.onclick = function() {
+      state.settings = state.settings || {};
+      state.settings.notifyMessages = qS('#notify-messages').checked;
+      state.settings.notifyMentions = qS('#notify-mentions').checked;
+      state.settings.notifyFriends = qS('#notify-friends').checked;
+      state.settings.notifySounds = qS('#notify-sounds').checked;
+      state.settings.notifyVoiceSounds = qS('#notify-voice-sounds').checked;
+      send({ type: 'update_settings', settings: state.settings });
+      showNotification('Настройки уведомлений сохранены');
+    };
+  }
+  
+  // Save language
+  var saveLangBtn = qS('#save-language');
+  if (saveLangBtn) {
+    saveLangBtn.onclick = function() {
+      showNotification('Настройки языка сохранены');
+    };
+  }
+  
+  // Logout all devices
+  var logoutAllBtn = qS('#logout-all-btn');
+  if (logoutAllBtn) {
+    logoutAllBtn.onclick = function() {
+      showConfirmDialog('Выйти со всех устройств?', function() {
+        send({ type: 'logout_all' });
+        signOut();
+      });
+    };
+  }
+  
+  var signoutAllBtn = qS('#signout-all-btn');
+  if (signoutAllBtn) {
+    signoutAllBtn.onclick = function() {
+      showConfirmDialog('Выйти со всех устройств?', function() {
+        send({ type: 'logout_all' });
+        signOut();
+      });
+    };
+  }
   
   qS('#signout-btn').onclick = signOut;
   

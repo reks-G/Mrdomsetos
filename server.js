@@ -1481,7 +1481,7 @@ const handlers = {
   },
 
   update_profile(ws, data) {
-    const { name, avatar, status, customStatus } = data;
+    const { name, avatar, status, customStatus, bio } = data;
     const userId = ws.userId;
     const acc = getAccountById(userId);
     if (!acc) return;
@@ -1490,6 +1490,7 @@ const handlers = {
     if (avatar !== undefined) acc.avatar = avatar;
     if (status) acc.status = status;
     if (customStatus !== undefined) acc.customStatus = customStatus;
+    if (bio !== undefined) acc.bio = bio;
     
     const online = onlineUsers.get(userId);
     if (online) {
@@ -1514,6 +1515,23 @@ const handlers = {
     
     send(ws, { type: 'profile_updated', user: getUserData(userId) });
     broadcast({ type: 'user_update', user: getUserData(userId) }, userId);
+  },
+  
+  change_password(ws, data) {
+    const { currentPassword, newPassword } = data;
+    const userId = ws.userId;
+    const acc = getAccountById(userId);
+    if (!acc) return;
+    
+    if (acc.password !== hash(currentPassword)) {
+      send(ws, { type: 'error', message: 'Неверный текущий пароль' });
+      return;
+    }
+    
+    acc.password = hash(newPassword);
+    saveAll();
+    
+    send(ws, { type: 'password_changed' });
   },
 
   update_settings(ws, data) {

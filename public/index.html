@@ -541,74 +541,396 @@
   </div>
 
   <div class="modal" id="settings-modal">
-    <div class="modal-box large">
-      <div class="modal-header"><h2>Настройки</h2><button class="close-btn" data-close>&times;</button></div>
+    <div class="modal-box xlarge">
+      <div class="modal-header"><h2>Настройки пользователя</h2><button class="close-btn" data-close>&times;</button></div>
       <div class="settings-layout">
         <div class="settings-nav">
-          <button class="settings-tab active" data-settings="profile">Профиль</button>
+          <div class="settings-nav-section">Аккаунт</div>
+          <button class="settings-tab active" data-settings="general">Общие</button>
+          <button class="settings-tab" data-settings="profile">Профиль</button>
+          <button class="settings-tab" data-settings="security">Безопасность</button>
+          <div class="settings-nav-section">Приложение</div>
           <button class="settings-tab" data-settings="audio">Голос и видео</button>
+          <button class="settings-tab" data-settings="notifications">Уведомления</button>
+          <button class="settings-tab" data-settings="language">Язык и регион</button>
+          <div class="settings-nav-section">Другое</div>
+          <button class="settings-tab" data-settings="apps">Приложения</button>
+          <button class="settings-tab danger" data-settings="logout">Выход</button>
         </div>
         <div class="settings-content">
-          <div class="settings-panel active" id="settings-profile">
+          <!-- Общие -->
+          <div class="settings-panel active" id="settings-general">
+            <h3>Общие настройки</h3>
+            <p class="settings-hint">Основная информация вашего аккаунта</p>
+            
+            <div class="settings-section">
+              <div class="form-group">
+                <label>Отображаемое имя</label>
+                <p class="hint">Это имя будет видно другим пользователям</p>
+                <input type="text" id="settings-display-name" placeholder="Ваше имя">
+              </div>
+              
+              <div class="form-group">
+                <label>Никнейм</label>
+                <p class="hint">Уникальный идентификатор в системе</p>
+                <div class="input-with-prefix">
+                  <span class="prefix">@</span>
+                  <input type="text" id="settings-nickname" placeholder="nickname">
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label>Электронная почта</label>
+                <p class="hint">Используется для уведомлений и восстановления пароля</p>
+                <input type="email" id="settings-email" placeholder="email@example.com" disabled>
+                <button class="btn small secondary" id="change-email-btn">Изменить</button>
+              </div>
+            </div>
+            
+            <button class="btn primary" id="save-general">Сохранить изменения</button>
+          </div>
+          
+          <!-- Профиль -->
+          <div class="settings-panel" id="settings-profile">
             <h3>Профиль</h3>
-            <div class="avatar-edit">
-              <div class="avatar large" id="settings-avatar"></div>
-              <div class="avatar-actions">
-                <button class="btn" id="upload-avatar">Загрузить</button>
-                <button class="btn secondary" id="remove-avatar">Удалить</button>
+            <p class="settings-hint">Настройте свой публичный профиль</p>
+            
+            <div class="settings-section">
+              <div class="avatar-edit-large">
+                <div class="avatar xlarge" id="settings-avatar"></div>
+                <div class="avatar-edit-overlay" id="avatar-edit-overlay">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  <span>Изменить</span>
+                </div>
               </div>
               <input type="file" id="avatar-input" accept="image/*" style="display:none">
+              <div class="avatar-buttons">
+                <button class="btn" id="upload-avatar">Загрузить аватар</button>
+                <button class="btn secondary" id="remove-avatar">Удалить</button>
+              </div>
             </div>
-            <div class="form-group"><label>Имя пользователя</label><input type="text" id="settings-name"></div>
-            <button class="btn primary" id="save-profile">Сохранить</button>
-            <div class="signout-section">
-              <button class="btn danger" id="signout-btn">Выйти из аккаунта</button>
+            
+            <div class="form-group">
+              <label>О себе</label>
+              <p class="hint">Расскажите немного о себе (до 200 символов)</p>
+              <textarea id="settings-bio" maxlength="200" placeholder="Напишите что-нибудь о себе..."></textarea>
+              <div class="char-counter"><span id="bio-counter">0</span>/200</div>
+            </div>
+            
+            <div class="form-group">
+              <label>Статус</label>
+              <p class="hint">Пользовательский статус, который увидят другие</p>
+              <input type="text" id="settings-custom-status" placeholder="Чем занимаетесь?" maxlength="50">
+            </div>
+            
+            <button class="btn primary" id="save-profile">Сохранить профиль</button>
+          </div>
+          
+          <!-- Безопасность -->
+          <div class="settings-panel" id="settings-security">
+            <h3>Безопасность</h3>
+            <p class="settings-hint">Защитите свой аккаунт</p>
+            
+            <div class="settings-section">
+              <h4>Изменить пароль</h4>
+              <div class="form-group">
+                <label>Текущий пароль</label>
+                <input type="password" id="current-password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label>Новый пароль</label>
+                <input type="password" id="new-password" placeholder="••••••••">
+                <p class="hint">Минимум 8 символов, включая буквы и цифры</p>
+              </div>
+              <div class="form-group">
+                <label>Подтвердите пароль</label>
+                <input type="password" id="confirm-password" placeholder="••••••••">
+              </div>
+              <button class="btn primary" id="change-password-btn">Изменить пароль</button>
+            </div>
+            
+            <div class="settings-section">
+              <h4>Двухфакторная аутентификация</h4>
+              <p class="hint">Добавьте дополнительный уровень защиты</p>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">2FA через приложение</span>
+                  <span class="toggle-desc">Используйте Google Authenticator или аналог</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="2fa-toggle" disabled>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p class="hint muted">Скоро будет доступно</p>
+            </div>
+            
+            <div class="settings-section">
+              <h4>Активные сессии</h4>
+              <p class="hint">Управляйте устройствами, на которых выполнен вход</p>
+              <div class="sessions-list" id="sessions-list">
+                <div class="session-item current">
+                  <div class="session-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+                  <div class="session-info">
+                    <span class="session-name">Текущее устройство</span>
+                    <span class="session-details">Активно сейчас</span>
+                  </div>
+                  <span class="session-badge">Текущая</span>
+                </div>
+              </div>
+              <button class="btn danger-outline" id="logout-all-btn">Выйти со всех устройств</button>
             </div>
           </div>
+          
+          <!-- Голос и видео -->
           <div class="settings-panel" id="settings-audio">
             <h3>Голос и видео</h3>
-            <div class="form-group">
-              <label>Устройство ввода</label>
-              <div class="custom-select" id="mic-select-wrapper">
-                <div class="custom-select-trigger" id="mic-select-trigger">
-                  <span>Выберите микрофон</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <p class="settings-hint">Настройки микрофона и динамиков</p>
+            
+            <div class="settings-section">
+              <h4>Устройства ввода</h4>
+              <div class="form-group">
+                <label>Микрофон</label>
+                <div class="custom-select" id="mic-select-wrapper">
+                  <div class="custom-select-trigger" id="mic-select-trigger">
+                    <span>Выберите микрофон</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                  </div>
+                  <div class="custom-select-options" id="mic-select-options"></div>
                 </div>
-                <div class="custom-select-options" id="mic-select-options"></div>
+                <input type="hidden" id="mic-select">
               </div>
-              <input type="hidden" id="mic-select">
-            </div>
-            <div class="form-group">
-              <label>Устройство вывода</label>
-              <div class="custom-select" id="speaker-select-wrapper">
-                <div class="custom-select-trigger" id="speaker-select-trigger">
-                  <span>Выберите динамик</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                </div>
-                <div class="custom-select-options" id="speaker-select-options"></div>
+              
+              <div class="form-group">
+                <label>Громкость микрофона</label>
+                <input type="range" id="mic-volume" min="0" max="100" value="100">
               </div>
-              <input type="hidden" id="speaker-select">
-            </div>
-            <div class="form-group">
-              <label>Громкость микрофона</label>
-              <input type="range" id="mic-volume" min="0" max="100" value="100">
-            </div>
-            <div class="form-group mic-test-section">
-              <label>Проверка микрофона</label>
-              <p class="hint">Нажмите кнопку и говорите — вы услышите себя в наушниках</p>
-              <div class="mic-test-row">
-                <button class="btn primary" id="mic-test-btn">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-                  <span>Проверить микрофон</span>
-                </button>
-                <div class="mic-level-container">
-                  <div class="mic-level-bar" id="mic-level-bar"></div>
+              
+              <div class="mic-test-section">
+                <label>Проверка микрофона</label>
+                <p class="hint">Нажмите и говорите — вы услышите себя</p>
+                <div class="mic-test-row">
+                  <button class="btn" id="mic-test-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                    <span>Проверить</span>
+                  </button>
+                  <div class="mic-level-container">
+                    <div class="mic-level-bar" id="mic-level-bar"></div>
+                  </div>
                 </div>
               </div>
             </div>
-            <button class="btn primary" id="save-audio">Сохранить</button>
+            
+            <div class="settings-section">
+              <h4>Устройства вывода</h4>
+              <div class="form-group">
+                <label>Динамики</label>
+                <div class="custom-select" id="speaker-select-wrapper">
+                  <div class="custom-select-trigger" id="speaker-select-trigger">
+                    <span>Выберите динамик</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                  </div>
+                  <div class="custom-select-options" id="speaker-select-options"></div>
+                </div>
+                <input type="hidden" id="speaker-select">
+              </div>
+              
+              <div class="form-group">
+                <label>Громкость вывода</label>
+                <input type="range" id="output-volume" min="0" max="100" value="100">
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h4>Обработка звука</h4>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Шумоподавление</span>
+                  <span class="toggle-desc">Уменьшает фоновый шум</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="noise-suppression-toggle" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Эхоподавление</span>
+                  <span class="toggle-desc">Убирает эхо от динамиков</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="echo-cancellation-toggle" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            
+            <button class="btn primary" id="save-audio">Сохранить настройки</button>
           </div>
-
+          
+          <!-- Уведомления -->
+          <div class="settings-panel" id="settings-notifications">
+            <h3>Уведомления</h3>
+            <p class="settings-hint">Настройте, какие уведомления получать</p>
+            
+            <div class="settings-section">
+              <h4>Типы уведомлений</h4>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Сообщения</span>
+                  <span class="toggle-desc">Уведомления о новых сообщениях</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notify-messages" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Упоминания</span>
+                  <span class="toggle-desc">Когда вас упоминают (@имя)</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notify-mentions" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Запросы в друзья</span>
+                  <span class="toggle-desc">Новые заявки в друзья</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notify-friends" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h4>Звуки</h4>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Звуки уведомлений</span>
+                  <span class="toggle-desc">Воспроизводить звук при уведомлениях</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notify-sounds" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Звуки голосового чата</span>
+                  <span class="toggle-desc">Звуки входа/выхода из канала</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="notify-voice-sounds" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            
+            <button class="btn primary" id="save-notifications">Сохранить</button>
+          </div>
+          
+          <!-- Язык и регион -->
+          <div class="settings-panel" id="settings-language">
+            <h3>Язык и регион</h3>
+            <p class="settings-hint">Настройки локализации</p>
+            
+            <div class="settings-section">
+              <div class="form-group">
+                <label>Язык интерфейса</label>
+                <select id="language-select" class="styled-select">
+                  <option value="ru" selected>Русский</option>
+                  <option value="en">English</option>
+                  <option value="uk">Українська</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label>Часовой пояс</label>
+                <select id="timezone-select" class="styled-select">
+                  <option value="Europe/Moscow" selected>Москва (UTC+3)</option>
+                  <option value="Europe/Kiev">Киев (UTC+2)</option>
+                  <option value="Europe/London">Лондон (UTC+0)</option>
+                  <option value="America/New_York">Нью-Йорк (UTC-5)</option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label>Формат даты</label>
+                <select id="date-format-select" class="styled-select">
+                  <option value="dd.mm.yyyy" selected>ДД.ММ.ГГГГ</option>
+                  <option value="mm/dd/yyyy">ММ/ДД/ГГГГ</option>
+                  <option value="yyyy-mm-dd">ГГГГ-ММ-ДД</option>
+                </select>
+              </div>
+            </div>
+            
+            <button class="btn primary" id="save-language">Сохранить</button>
+          </div>
+          
+          <!-- Приложения -->
+          <div class="settings-panel" id="settings-apps">
+            <h3>Приложения и интеграции</h3>
+            <p class="settings-hint">Управление подключенными приложениями</p>
+            
+            <div class="settings-section">
+              <h4>Подключенные приложения</h4>
+              <div class="apps-list" id="connected-apps">
+                <div class="empty-state">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  <p>Нет подключенных приложений</p>
+                  <span class="hint">Приложения появятся здесь после подключения</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="settings-section">
+              <h4>Разрешения</h4>
+              <p class="hint">Контролируйте, какие данные могут использовать приложения</p>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Доступ к профилю</span>
+                  <span class="toggle-desc">Приложения могут видеть ваше имя и аватар</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="app-profile-access" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="toggle-setting">
+                <div class="toggle-info">
+                  <span class="toggle-title">Доступ к серверам</span>
+                  <span class="toggle-desc">Приложения могут видеть ваши серверы</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="app-servers-access">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Выход -->
+          <div class="settings-panel" id="settings-logout">
+            <h3>Выход из аккаунта</h3>
+            <p class="settings-hint">Завершение сессии</p>
+            
+            <div class="logout-section">
+              <div class="logout-warning">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div>
+                  <h4>Вы уверены?</h4>
+                  <p>После выхода вам нужно будет снова войти в аккаунт</p>
+                </div>
+              </div>
+              <button class="btn danger" id="signout-btn">Выйти из аккаунта</button>
+              <button class="btn danger-outline" id="signout-all-btn">Выйти со всех устройств</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
