@@ -298,6 +298,11 @@ function genId(prefix = 'id') {
   return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 }
 
+function genTag() {
+  // Generate unique 4-digit tag like Discord's #1234
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
 function genInvite() {
   return crypto.randomBytes(4).toString('hex');
 }
@@ -315,6 +320,15 @@ function getAccountById(userId) {
   if (onlineUsers.has(userId)) {
     const online = onlineUsers.get(userId);
     return { id: userId, name: online.name, avatar: online.avatar, status: online.status };
+  }
+  return null;
+}
+
+function getAccountByTag(tag) {
+  // Find account by unique tag (e.g. "1234" or "#1234")
+  const cleanTag = tag.replace('#', '').trim();
+  for (const acc of accounts.values()) {
+    if (acc.tag === cleanTag) return acc;
   }
   return null;
 }
@@ -514,6 +528,7 @@ function getUserData(userId) {
   return acc ? {
     id: userId,
     name: acc.name,
+    tag: acc.tag || null,
     avatar: acc.avatar,
     banner: acc.banner || null,
     bio: acc.bio || null,
@@ -602,8 +617,10 @@ const handlers = {
     }
     
     const userId = genId('user');
+    const tag = genTag();
     const account = {
       id: userId,
+      tag: tag,
       email,
       password: hash(password),
       name: name || 'Пользователь',
@@ -622,7 +639,7 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, status: 'online', createdAt: account.createdAt },
+      user: { name: account.name, avatar: account.avatar, tag: account.tag, status: 'online', createdAt: account.createdAt },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -640,6 +657,12 @@ const handlers = {
       return;
     }
     
+    // Generate tag for old accounts that don't have one
+    if (!account.tag) {
+      account.tag = genTag();
+      saveAll();
+    }
+    
     const userId = account.id;
     ws.userId = userId;
     onlineUsers.set(userId, { name: account.name, avatar: account.avatar, status: account.status || 'online' });
@@ -647,7 +670,7 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, status: account.status || 'online', customStatus: account.customStatus, createdAt: account.createdAt },
+      user: { name: account.name, avatar: account.avatar, tag: account.tag, status: account.status || 'online', customStatus: account.customStatus, createdAt: account.createdAt },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -1316,19 +1339,19 @@ const handlers = {
 
   // Friends
   friend_request(ws, data) {
-    const { name, to } = data;
+    const { tag, to } = data;
     const userId = ws.userId;
     
-    // Find target by name or by ID
+    // Find target by tag or by ID
     let target;
     if (to) {
       target = getAccountById(to);
-    } else if (name) {
-      target = getAccountByName(name);
+    } else if (tag) {
+      target = getAccountByTag(tag);
     }
     
     if (!target) {
-      send(ws, { type: 'friend_error', message: 'Пользователь не найден' });
+      send(ws, { type: 'friend_error', message: 'Пользователь с таким ID не найден' });
       return;
     }
     if (target.id === userId) {

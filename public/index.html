@@ -154,10 +154,19 @@
           <div class="tab-content" id="tab-add">
             <div class="add-form">
               <h3>Добавить в друзья</h3>
-              <p>Найдите пользователя по имени</p>
+              <p>Введите уникальный ID пользователя</p>
+              <div class="add-friend-info">
+                <span>Ваш ID:</span>
+                <div class="user-tag-display">
+                  <span id="my-user-tag">#0000</span>
+                  <button class="copy-tag-btn" id="copy-my-tag" title="Копировать">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  </button>
+                </div>
+              </div>
               <div class="input-row">
-                <input type="text" id="search-input" placeholder="Имя пользователя">
-                <button class="btn primary" id="search-btn">Найти</button>
+                <input type="text" id="search-input" placeholder="Введите ID (например: 1234)">
+                <button class="btn primary" id="search-btn">Добавить</button>
               </div>
               <div id="search-results"></div>
             </div>

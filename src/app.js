@@ -8,6 +8,7 @@ var state = {
   ws: null,
   userId: null,
   username: null,
+  userTag: null,
   userAvatar: null,
   userBanner: null,
   userBio: null,
@@ -98,6 +99,7 @@ function hideAuthLoading() {
 function processAuthSuccess(msg) {
   state.userId = msg.userId;
   state.username = msg.user.name;
+  state.userTag = msg.user.tag || null;
   state.userAvatar = msg.user.avatar;
   state.userBanner = msg.user.banner || null;
   state.userBio = msg.user.bio || null;
@@ -911,6 +913,10 @@ function updateUserPanel() {
   }
   if (nm) nm.textContent = state.username || 'Гость';
   if (st) st.textContent = state.customStatus || displayStatus(state.userStatus);
+  
+  // Update my tag display
+  var myTagEl = qS('#my-user-tag');
+  if (myTagEl) myTagEl.textContent = '#' + (state.userTag || '0000');
 }
 
 // ============ RENDER FUNCTIONS ============
@@ -4722,13 +4728,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
   
-  // Friend request
+  // Friend request by tag
   qS('#search-btn').onclick = function() {
-    var name = qS('#search-input').value.trim();
-    if (!name) return;
-    send({ type: 'friend_request', name: name });
+    var tag = qS('#search-input').value.trim();
+    if (!tag) return;
+    send({ type: 'friend_request', tag: tag });
     qS('#search-input').value = '';
   };
+  
+  // Copy my tag
+  var copyTagBtn = qS('#copy-my-tag');
+  if (copyTagBtn) {
+    copyTagBtn.onclick = function() {
+      var tag = state.userTag || '0000';
+      navigator.clipboard.writeText(tag).then(function() {
+        showNotification('ID скопирован!');
+      });
+    };
+  }
   
   // User panel mic toggle
   var userMicBtn = qS('#mic-toggle');
@@ -4785,7 +4802,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var nameEl = qS('#profile-preview-name');
     var tagEl = qS('#profile-preview-tag');
     if (nameEl) nameEl.textContent = state.username || 'Пользователь';
-    if (tagEl) tagEl.textContent = '@' + (state.username || 'username').toLowerCase().replace(/\s+/g, '');
+    if (tagEl) tagEl.textContent = '#' + (state.userTag || '0000');
     
     var previewBanner = qS('#profile-preview-banner');
     if (previewBanner && state.userBanner) {
@@ -5437,7 +5454,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var nameEl = qS('#profile-preview-name');
     var tagEl = qS('#profile-preview-tag');
     if (nameEl) nameEl.textContent = state.username || 'Пользователь';
-    if (tagEl) tagEl.textContent = '@' + (state.username || 'username').toLowerCase().replace(/\s+/g, '');
+    if (tagEl) tagEl.textContent = '#' + (state.userTag || '0000');
     
     // Update banner if exists
     var previewBanner = qS('#profile-preview-banner');
