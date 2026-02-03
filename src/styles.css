@@ -1507,8 +1507,23 @@ body::before {
 .btn.full { width: 100%; }
 .signout-section { margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border); }
 .error { color: var(--danger); font-size: 13px; margin-top: 14px; text-align: center; }
-.input-row { display: flex; gap: 12px; }
-.input-row input { flex: 1; }
+.input-row { display: flex; gap: 12px; align-items: center; }
+.input-row input { 
+  flex: 1;
+  padding: 14px 18px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+.input-row input::placeholder { color: var(--text-muted); }
+.input-row input:focus { 
+  border-color: var(--accent); 
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
 
 .add-form { max-width: 500px; }
 .add-form h3 { margin-bottom: 10px; font-size: 18px; }
