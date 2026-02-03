@@ -595,35 +595,97 @@
             <h3>Профиль</h3>
             <p class="settings-hint">Настройте свой публичный профиль</p>
             
-            <div class="settings-section">
-              <div class="avatar-edit-large">
-                <div class="avatar xlarge" id="settings-avatar"></div>
-                <div class="avatar-edit-overlay" id="avatar-edit-overlay">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  <span>Изменить</span>
+            <div class="profile-editor">
+              <!-- Preview Card -->
+              <div class="profile-preview-card">
+                <div class="profile-preview-banner" id="profile-preview-banner">
+                  <button class="banner-edit-btn" id="edit-banner-btn" title="Изменить баннер">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  </button>
                 </div>
+                <input type="file" id="banner-input" accept="image/*" style="display:none">
+                <div class="profile-preview-avatar-wrapper">
+                  <div class="avatar xlarge" id="settings-avatar"></div>
+                  <div class="avatar-edit-btn" id="avatar-edit-overlay">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  </div>
+                  <div class="avatar-status-indicator online"></div>
+                </div>
+                <input type="file" id="avatar-input" accept="image/*" style="display:none">
+                <div class="profile-preview-info">
+                  <div class="profile-preview-name" id="profile-preview-name">Пользователь</div>
+                  <div class="profile-preview-tag" id="profile-preview-tag">@username</div>
+                </div>
+                <div class="profile-preview-badges" id="profile-preview-badges"></div>
               </div>
-              <input type="file" id="avatar-input" accept="image/*" style="display:none">
-              <div class="avatar-buttons">
-                <button class="btn" id="upload-avatar">Загрузить аватар</button>
-                <button class="btn secondary" id="remove-avatar">Удалить</button>
+              
+              <!-- Edit Form -->
+              <div class="profile-edit-form">
+                <div class="profile-edit-section">
+                  <div class="section-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>Аватар</span>
+                  </div>
+                  <div class="avatar-actions">
+                    <button class="btn icon-text" id="upload-avatar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      Загрузить
+                    </button>
+                    <button class="btn secondary icon-text" id="remove-avatar">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="profile-edit-section">
+                  <div class="section-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+                    <span>Баннер профиля</span>
+                  </div>
+                  <p class="section-hint">Рекомендуемый размер: 600x240 пикселей</p>
+                  <div class="banner-actions">
+                    <button class="btn icon-text" id="upload-banner">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      Загрузить баннер
+                    </button>
+                    <button class="btn secondary icon-text" id="remove-banner">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="profile-edit-section">
+                  <div class="section-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span>О себе</span>
+                  </div>
+                  <p class="section-hint">Расскажите немного о себе</p>
+                  <div class="textarea-wrapper">
+                    <textarea id="settings-bio" maxlength="200" placeholder="Напишите что-нибудь интересное о себе..."></textarea>
+                    <div class="char-counter"><span id="bio-counter">0</span>/200</div>
+                  </div>
+                </div>
+                
+                <div class="profile-edit-section">
+                  <div class="section-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                    <span>Пользовательский статус</span>
+                  </div>
+                  <p class="section-hint">Статус, который увидят другие пользователи</p>
+                  <div class="status-input-wrapper">
+                    <span class="status-emoji">✨</span>
+                    <input type="text" id="settings-custom-status" placeholder="Чем занимаетесь?" maxlength="50">
+                  </div>
+                </div>
+                
+                <button class="btn primary save-profile-btn" id="save-profile">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  Сохранить профиль
+                </button>
               </div>
             </div>
-            
-            <div class="form-group">
-              <label>О себе</label>
-              <p class="hint">Расскажите немного о себе (до 200 символов)</p>
-              <textarea id="settings-bio" maxlength="200" placeholder="Напишите что-нибудь о себе..."></textarea>
-              <div class="char-counter"><span id="bio-counter">0</span>/200</div>
-            </div>
-            
-            <div class="form-group">
-              <label>Статус</label>
-              <p class="hint">Пользовательский статус, который увидят другие</p>
-              <input type="text" id="settings-custom-status" placeholder="Чем занимаетесь?" maxlength="50">
-            </div>
-            
-            <button class="btn primary" id="save-profile">Сохранить профиль</button>
           </div>
           
           <!-- Безопасность -->

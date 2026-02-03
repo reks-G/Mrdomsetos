@@ -515,6 +515,8 @@ function getUserData(userId) {
     id: userId,
     name: acc.name,
     avatar: acc.avatar,
+    banner: acc.banner || null,
+    bio: acc.bio || null,
     status: isOnline ? (acc.status || 'online') : 'offline',
     customStatus: acc.customStatus || null,
     createdAt: acc.createdAt || null
@@ -1481,13 +1483,14 @@ const handlers = {
   },
 
   update_profile(ws, data) {
-    const { name, avatar, status, customStatus, bio } = data;
+    const { name, avatar, status, customStatus, bio, banner } = data;
     const userId = ws.userId;
     const acc = getAccountById(userId);
     if (!acc) return;
     
     if (name) acc.name = name;
     if (avatar !== undefined) acc.avatar = avatar;
+    if (banner !== undefined) acc.banner = banner;
     if (status) acc.status = status;
     if (customStatus !== undefined) acc.customStatus = customStatus;
     if (bio !== undefined) acc.bio = bio;

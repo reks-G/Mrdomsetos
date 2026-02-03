@@ -1590,6 +1590,291 @@ body::before {
 .avatar-edit-large:hover .avatar-edit-overlay { opacity: 1; }
 .avatar-buttons { display: flex; gap: 8px; justify-content: center; margin-bottom: 24px; }
 
+/* Profile Editor - Modern Design */
+.profile-editor {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 32px;
+  margin-top: 24px;
+}
+
+.profile-preview-card {
+  background: var(--bg-solid);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+
+.profile-preview-banner {
+  height: 120px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  position: relative;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+}
+
+.profile-preview-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+}
+
+.banner-edit-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.banner-edit-btn svg { width: 16px; height: 16px; }
+.profile-preview-banner:hover .banner-edit-btn { opacity: 1; }
+.banner-edit-btn:hover { background: rgba(0, 0, 0, 0.7); transform: scale(1.1); }
+
+.profile-preview-avatar-wrapper {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  margin: -46px auto 0;
+  z-index: 2;
+}
+
+.profile-preview-avatar-wrapper .avatar {
+  width: 92px !important;
+  height: 92px !important;
+  border: 4px solid var(--bg-solid);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.avatar-edit-btn {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-solid);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 3;
+}
+
+.avatar-edit-btn svg { width: 12px; height: 12px; }
+.avatar-edit-btn:hover { transform: scale(1.1); background: #9333ea; }
+
+.avatar-status-indicator {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid var(--bg-solid);
+  z-index: 3;
+}
+
+.avatar-status-indicator.online { background: var(--success); }
+.avatar-status-indicator.idle { background: #f59e0b; }
+.avatar-status-indicator.dnd { background: var(--danger); }
+.avatar-status-indicator.offline { background: var(--text-muted); }
+
+.profile-preview-info {
+  text-align: center;
+  padding: 16px 20px 8px;
+}
+
+.profile-preview-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.profile-preview-tag {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.profile-preview-badges {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 20px 20px;
+  flex-wrap: wrap;
+}
+
+/* Profile Edit Form */
+.profile-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.profile-edit-section {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.profile-edit-section .section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.profile-edit-section .section-header svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.profile-edit-section .section-header span {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.profile-edit-section .section-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.avatar-actions,
+.banner-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn.icon-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.btn.icon-text svg {
+  width: 16px;
+  height: 16px;
+}
+
+.textarea-wrapper {
+  position: relative;
+}
+
+.textarea-wrapper textarea {
+  width: 100%;
+  min-height: 100px;
+  padding: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  resize: vertical;
+  transition: all 0.2s;
+}
+
+.textarea-wrapper textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+  outline: none;
+}
+
+.textarea-wrapper .char-counter {
+  position: absolute;
+  bottom: 10px;
+  right: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.status-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 14px;
+  transition: all 0.2s;
+}
+
+.status-input-wrapper:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+}
+
+.status-emoji {
+  font-size: 18px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.status-input-wrapper input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 14px 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.save-profile-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.save-profile-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .profile-editor {
+    grid-template-columns: 1fr;
+  }
+  
+  .profile-preview-card {
+    position: static;
+    max-width: 340px;
+    margin: 0 auto;
+  }
+}
+
 /* Toggle Settings */
 .toggle-setting {
   display: flex;

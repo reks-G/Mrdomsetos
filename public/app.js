@@ -9,6 +9,8 @@ var state = {
   userId: null,
   username: null,
   userAvatar: null,
+  userBanner: null,
+  userBio: null,
   userStatus: 'online',
   customStatus: null,
   isGuest: false,
@@ -97,6 +99,8 @@ function processAuthSuccess(msg) {
   state.userId = msg.userId;
   state.username = msg.user.name;
   state.userAvatar = msg.user.avatar;
+  state.userBanner = msg.user.banner || null;
+  state.userBio = msg.user.bio || null;
   state.userStatus = msg.user.status || 'online';
   state.customStatus = msg.user.customStatus;
   state.userCreatedAt = msg.user.createdAt;
@@ -4776,6 +4780,17 @@ document.addEventListener('DOMContentLoaded', function() {
       if (state.userAvatar) av.innerHTML = '<img src="' + state.userAvatar + '">';
       else av.textContent = state.username ? state.username.charAt(0).toUpperCase() : '?';
     }
+    
+    // Update profile preview
+    var nameEl = qS('#profile-preview-name');
+    var tagEl = qS('#profile-preview-tag');
+    if (nameEl) nameEl.textContent = state.username || 'Пользователь';
+    if (tagEl) tagEl.textContent = '@' + (state.username || 'username').toLowerCase().replace(/\s+/g, '');
+    
+    var previewBanner = qS('#profile-preview-banner');
+    if (previewBanner && state.userBanner) {
+      previewBanner.style.backgroundImage = 'url(' + state.userBanner + ')';
+    }
   };
   
   // Bio character counter
@@ -5361,6 +5376,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Avatar upload
   qS('#upload-avatar').onclick = function() { qS('#avatar-input').click(); };
+  qS('#avatar-edit-overlay').onclick = function() { qS('#avatar-input').click(); };
   qS('#avatar-input').onchange = function(e) {
     var file = e.target.files[0];
     if (!file) return;
@@ -5377,6 +5393,58 @@ document.addEventListener('DOMContentLoaded', function() {
     qS('#settings-avatar').innerHTML = state.username ? state.username.charAt(0).toUpperCase() : '?';
     send({ type: 'update_profile', avatar: null });
   };
+  
+  // Banner upload
+  var uploadBannerBtn = qS('#upload-banner');
+  var editBannerBtn = qS('#edit-banner-btn');
+  var bannerInput = qS('#banner-input');
+  var removeBannerBtn = qS('#remove-banner');
+  
+  if (uploadBannerBtn) uploadBannerBtn.onclick = function() { bannerInput.click(); };
+  if (editBannerBtn) editBannerBtn.onclick = function() { bannerInput.click(); };
+  
+  if (bannerInput) {
+    bannerInput.onchange = function(e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var banner = ev.target.result;
+        var previewBanner = qS('#profile-preview-banner');
+        if (previewBanner) {
+          previewBanner.style.backgroundImage = 'url(' + banner + ')';
+        }
+        state.userBanner = banner;
+        send({ type: 'update_profile', banner: banner });
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  
+  if (removeBannerBtn) {
+    removeBannerBtn.onclick = function() {
+      var previewBanner = qS('#profile-preview-banner');
+      if (previewBanner) {
+        previewBanner.style.backgroundImage = '';
+      }
+      state.userBanner = null;
+      send({ type: 'update_profile', banner: null });
+    };
+  }
+  
+  // Update profile preview when settings open
+  function updateProfilePreview() {
+    var nameEl = qS('#profile-preview-name');
+    var tagEl = qS('#profile-preview-tag');
+    if (nameEl) nameEl.textContent = state.username || 'Пользователь';
+    if (tagEl) tagEl.textContent = '@' + (state.username || 'username').toLowerCase().replace(/\s+/g, '');
+    
+    // Update banner if exists
+    var previewBanner = qS('#profile-preview-banner');
+    if (previewBanner && state.userBanner) {
+      previewBanner.style.backgroundImage = 'url(' + state.userBanner + ')';
+    }
+  }
   
   // Server icon upload
   qS('#upload-server-icon').onclick = function() { qS('#server-icon-input').click(); };
