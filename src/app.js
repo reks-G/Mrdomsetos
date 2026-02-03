@@ -1859,6 +1859,12 @@ function joinVoiceChannel(id) {
         if (micOff) micOff.style.display = 'none';
       }
       
+      // Reset user panel mic button state
+      var userMicBtn = qS('#mic-toggle');
+      if (userMicBtn) {
+        userMicBtn.classList.remove('muted');
+      }
+      
       send({ type: 'voice_join', channelId: id, serverId: state.currentServer });
       renderChannels();
       
@@ -1918,6 +1924,12 @@ function leaveVoiceChannel() {
     pc.close();
   });
   peerConnections.clear();
+  
+  // Clear voice users for this channel
+  var channelId = state.voiceChannel;
+  if (channelId) {
+    state.voiceUsers.delete(channelId);
+  }
   
   send({ type: 'voice_leave', channelId: state.voiceChannel });
   state.voiceChannel = null;
@@ -4586,6 +4598,31 @@ document.addEventListener('DOMContentLoaded', function() {
     qS('#search-input').value = '';
   };
   
+  // User panel mic toggle
+  var userMicBtn = qS('#mic-toggle');
+  if (userMicBtn) {
+    userMicBtn.onclick = function() {
+      if (!state.voiceChannel) {
+        showNotification('Вы не в голосовом канале');
+        return;
+      }
+      var muted = toggleMute();
+      userMicBtn.classList.toggle('muted', muted);
+      
+      // Also update voice-mic button if visible
+      var voiceMicBtn = qS('#voice-mic');
+      if (voiceMicBtn) {
+        voiceMicBtn.classList.toggle('muted', muted);
+        var micOn = voiceMicBtn.querySelector('.mic-on');
+        var micOff = voiceMicBtn.querySelector('.mic-off');
+        if (micOn && micOff) {
+          micOn.style.display = muted ? 'none' : 'block';
+          micOff.style.display = muted ? 'block' : 'none';
+        }
+      }
+    };
+  }
+  
   // Settings
   qS('#settings-btn').onclick = function() {
     openModal('settings-modal');
@@ -4980,6 +5017,12 @@ document.addEventListener('DOMContentLoaded', function() {
           micOn.style.display = 'block';
           micOff.style.display = 'none';
         }
+      }
+      
+      // Also update user panel mic button
+      var userMicBtn = qS('#mic-toggle');
+      if (userMicBtn) {
+        userMicBtn.classList.toggle('muted', muted);
       }
     };
   }
