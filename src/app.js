@@ -859,6 +859,20 @@ function handleMessage(msg) {
     
     user_search_results: function() {
       renderUserSearchResults(msg.results);
+    },
+    
+    mention: function() {
+      // Show notification for mention
+      var fromName = msg.from ? msg.from.name : 'Кто-то';
+      var serverName = msg.serverName || 'сервер';
+      var channelName = msg.channelName || 'канал';
+      
+      showMentionNotification(fromName, serverName, channelName, msg.message, msg.serverId, msg.channelId);
+      
+      // Play sound if enabled
+      if (state.settings.sounds) {
+        playMentionSound();
+      }
     }
   };
   
@@ -897,6 +911,73 @@ function showNotification(text) {
     n.classList.remove('show');
     setTimeout(function() { n.remove(); }, 300);
   }, 3000);
+}
+
+function showMentionNotification(fromName, serverName, channelName, message, serverId, channelId) {
+  var n = document.createElement('div');
+  n.className = 'mention-notification';
+  n.innerHTML = 
+    '<div class="mention-notification-header">' +
+      '<span class="mention-icon">@</span>' +
+      '<span class="mention-title">Вас упомянули</span>' +
+      '<button class="mention-close">&times;</button>' +
+    '</div>' +
+    '<div class="mention-notification-body">' +
+      '<div class="mention-from"><strong>' + escapeHtml(fromName) + '</strong> в <span class="mention-channel">#' + escapeHtml(channelName) + '</span></div>' +
+      '<div class="mention-text">' + escapeHtml(message.text).substring(0, 100) + (message.text.length > 100 ? '...' : '') + '</div>' +
+    '</div>';
+  
+  document.body.appendChild(n);
+  
+  // Close button
+  n.querySelector('.mention-close').onclick = function(e) {
+    e.stopPropagation();
+    n.classList.remove('show');
+    setTimeout(function() { n.remove(); }, 300);
+  };
+  
+  // Click to go to message
+  n.onclick = function() {
+    if (serverId && channelId) {
+      openServer(serverId);
+      setTimeout(function() {
+        openChannel(channelId);
+      }, 100);
+    }
+    n.classList.remove('show');
+    setTimeout(function() { n.remove(); }, 300);
+  };
+  
+  setTimeout(function() { n.classList.add('show'); }, 10);
+  
+  // Auto hide after 8 seconds
+  setTimeout(function() {
+    if (n.parentNode) {
+      n.classList.remove('show');
+      setTimeout(function() { n.remove(); }, 300);
+    }
+  }, 8000);
+}
+
+function playMentionSound() {
+  try {
+    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var oscillator = audioCtx.createOscillator();
+    var gainNode = audioCtx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.3);
+  } catch (e) {
+    console.log('Could not play mention sound');
+  }
 }
 
 function updateUserPanel() {

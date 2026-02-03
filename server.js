@@ -743,6 +743,34 @@ const handlers = {
     saveAll();
     
     broadcastToServer(serverId, { type: 'message', serverId, channel, message: msg });
+    
+    // Check for mentions (@username) and send notifications
+    const mentionRegex = /@(\w+)/g;
+    let match;
+    const mentionedUsers = new Set();
+    while ((match = mentionRegex.exec(text)) !== null) {
+      const mentionedName = match[1].toLowerCase();
+      // Find user by name in server members
+      for (const memberId of srv.members) {
+        const memberAcc = getAccountById(memberId);
+        if (memberAcc && memberAcc.name.toLowerCase() === mentionedName && memberId !== userId) {
+          mentionedUsers.add(memberId);
+        }
+      }
+    }
+    
+    // Send mention notifications
+    mentionedUsers.forEach(mentionedId => {
+      sendToUser(mentionedId, {
+        type: 'mention',
+        serverId,
+        channelId: channel,
+        serverName: srv.name,
+        channelName: srv.channels.find(c => c.id === channel)?.name || 'канал',
+        message: msg,
+        from: getUserData(userId)
+      });
+    });
   },
 
 
