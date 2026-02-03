@@ -4052,6 +4052,7 @@ function showUserProfile(userId) {
   if (statusTextEl) {
     var statusMap = { online: 'В сети', offline: 'Не в сети', idle: 'Неактивен', dnd: 'Не беспокоить' };
     statusTextEl.textContent = statusMap[user.status] || 'Не в сети';
+    statusTextEl.className = 'value ' + (user.status || 'offline');
   }
   
   // Set created date
