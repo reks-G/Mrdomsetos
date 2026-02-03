@@ -658,8 +658,14 @@ const handlers = {
       return;
     }
     
-    // Generate tag for old accounts that don't have one
-    if (!account.tag) {
+    // Special tag "0" for creator (reks)
+    if (account.name && account.name.toLowerCase() === 'reks') {
+      if (account.tag !== '0') {
+        account.tag = '0';
+        saveAll();
+      }
+    } else if (!account.tag) {
+      // Generate tag for old accounts that don't have one
       account.tag = genTag();
       saveAll();
     }
