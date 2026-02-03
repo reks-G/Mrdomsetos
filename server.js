@@ -582,6 +582,7 @@ function getServerMembers(serverId, requesterId) {
     return acc ? {
       id,
       name: acc.name,
+      tag: acc.tag || null,
       avatar: acc.avatar,
       status: isOnline ? (acc.status || 'online') : 'offline',
       customStatus: acc.customStatus,

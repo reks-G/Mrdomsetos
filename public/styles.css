@@ -3329,8 +3329,17 @@ body::before {
   font-size: 26px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
   letter-spacing: -0.5px;
+}
+
+.profile-tag {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: 'SF Mono', 'Consolas', monospace;
+  margin: 0 0 12px 0;
+  opacity: 0.9;
 }
 
 .profile-custom-status {

@@ -4038,6 +4038,7 @@ function showUserProfile(userId) {
     user = {
       id: state.userId,
       name: state.username,
+      tag: state.userTag,
       avatar: state.userAvatar,
       status: 'online',
       customStatus: state.customStatus,
@@ -4082,6 +4083,10 @@ function showUserProfile(userId) {
   // Set name
   var nameEl = qS('#profile-name');
   if (nameEl) nameEl.textContent = user.name || 'Пользователь';
+  
+  // Set tag
+  var tagEl = qS('#profile-tag');
+  if (tagEl) tagEl.textContent = '#' + (user.tag || '0000');
   
   // Set custom status
   var customStatusEl = qS('#profile-custom-status');
