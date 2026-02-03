@@ -349,11 +349,19 @@ function hasPermission(serverId, userId, permission) {
   if (!srv) return false;
   if (srv.ownerId === userId) return true;
   
-  const roleId = srv.memberRoles[userId] || 'default';
-  const role = srv.roles.find(r => r.id === roleId);
-  if (!role) return false;
+  // Support multiple roles
+  var userRoles = srv.memberRoles[userId] || ['default'];
+  if (!Array.isArray(userRoles)) userRoles = [userRoles];
+  if (userRoles.length === 0) userRoles = ['default'];
   
-  return role.permissions.includes('all') || role.permissions.includes(permission);
+  // Check if any role has the permission
+  for (var i = 0; i < userRoles.length; i++) {
+    var role = srv.roles.find(r => r.id === userRoles[i]);
+    if (role && (role.permissions.includes('all') || role.permissions.includes(permission))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function canManageChannel(serverId, userId) {
@@ -551,13 +559,16 @@ function getServerMembers(serverId, requesterId) {
   return [...srv.members].map(id => {
     const acc = getAccountById(id);
     const isOnline = onlineUsers.has(id) || id === requesterId;
+    // Support multiple roles
+    var userRoles = srv.memberRoles[id] || ['default'];
+    if (!Array.isArray(userRoles)) userRoles = [userRoles];
     return acc ? {
       id,
       name: acc.name,
       avatar: acc.avatar,
       status: isOnline ? (acc.status || 'online') : 'offline',
       customStatus: acc.customStatus,
-      role: srv.memberRoles[id] || 'default',
+      roles: userRoles,
       isOwner: srv.ownerId === id
     } : null;
   }).filter(Boolean);
@@ -1150,7 +1161,7 @@ const handlers = {
     }
     
     foundServer.members.add(userId);
-    foundServer.memberRoles[userId] = 'default';
+    foundServer.memberRoles[userId] = ['default'];
     saveAll();
     
     send(ws, {
@@ -1225,8 +1236,15 @@ const handlers = {
     const roleName = role ? role.name : roleId;
     
     srv.roles = srv.roles.filter(r => r.id !== roleId);
+    // Remove role from all members (support multiple roles)
     Object.keys(srv.memberRoles).forEach(mid => {
-      if (srv.memberRoles[mid] === roleId) srv.memberRoles[mid] = 'default';
+      var userRoles = srv.memberRoles[mid];
+      if (Array.isArray(userRoles)) {
+        srv.memberRoles[mid] = userRoles.filter(r => r !== roleId);
+        if (srv.memberRoles[mid].length === 0) srv.memberRoles[mid] = ['default'];
+      } else if (userRoles === roleId) {
+        srv.memberRoles[mid] = ['default'];
+      }
     });
     addAuditEntry(serverId, userId, 'role_delete', 'Удалена роль: ' + roleName);
     saveAll();
@@ -1256,7 +1274,7 @@ const handlers = {
   },
 
   assign_role(ws, data) {
-    const { serverId, memberId, roleId } = data;
+    const { serverId, memberId, roleId, action } = data;
     const userId = ws.userId;
     const srv = servers.get(serverId);
     if (!srv || !canManageRoles(serverId, userId)) return;
@@ -1264,10 +1282,33 @@ const handlers = {
     const role = srv.roles.find(r => r.id === roleId);
     if (!role) return;
     
-    srv.memberRoles[memberId] = roleId;
+    // Support multiple roles
+    var userRoles = srv.memberRoles[memberId] || ['default'];
+    if (!Array.isArray(userRoles)) userRoles = [userRoles];
+    
+    if (action === 'remove') {
+      // Remove role
+      userRoles = userRoles.filter(r => r !== roleId);
+      if (userRoles.length === 0) userRoles = ['default'];
+    } else {
+      // Add role (default action)
+      if (!userRoles.includes(roleId)) {
+        // Remove 'default' if adding a real role
+        userRoles = userRoles.filter(r => r !== 'default');
+        userRoles.push(roleId);
+      }
+    }
+    
+    srv.memberRoles[memberId] = userRoles;
     saveAll();
     
-    broadcastToServer(serverId, { type: 'role_assigned', serverId, memberId, roleId });
+    broadcastToServer(serverId, { 
+      type: 'roles_updated', 
+      serverId, 
+      memberId, 
+      roles: userRoles,
+      membersData: getServerMembers(serverId, userId)
+    });
   },
 
 

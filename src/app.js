@@ -725,6 +725,19 @@ function handleMessage(msg) {
       }
     },
     
+    roles_updated: function() {
+      var srv = state.servers.get(msg.serverId);
+      if (srv) {
+        srv.memberRoles[msg.memberId] = msg.roles;
+        if (msg.membersData) {
+          srv.membersData = msg.membersData;
+        }
+        if (state.currentServer === msg.serverId) {
+          renderMembers();
+        }
+      }
+    },
+    
     voice_state_update: function() {
       // Save voice users for this channel
       state.voiceUsers.set(msg.channelId, msg.users || []);
@@ -991,7 +1004,7 @@ function renderMembers() {
   var roles = srv.roles || [];
   if (!srv.memberRoles) srv.memberRoles = {};
   
-  // Group members by their role (hoisted roles only)
+  // Group members by their highest hoisted role
   var roleGroups = {};
   var ungroupedOnline = [];
   var ungroupedOffline = [];
@@ -1000,20 +1013,33 @@ function renderMembers() {
   var membersInHoistedRoles = new Set();
   
   mems.forEach(function(m) {
-    var memberRoleId = srv.memberRoles[m.id];
-    var memberRole = memberRoleId ? roles.find(function(r) { return r.id === memberRoleId; }) : null;
+    // Support multiple roles
+    var memberRoleIds = srv.memberRoles[m.id] || ['default'];
+    if (!Array.isArray(memberRoleIds)) memberRoleIds = [memberRoleIds];
     
-    // Store role info on member for display
-    m.roleData = memberRole;
+    // Find highest hoisted role
+    var memberRoles = memberRoleIds.map(function(rid) {
+      return roles.find(function(r) { return r.id === rid; });
+    }).filter(Boolean);
+    
+    // Sort by position to get highest
+    memberRoles.sort(function(a, b) { return (b.position || 0) - (a.position || 0); });
+    
+    // Find first hoisted role
+    var hoistedRole = memberRoles.find(function(r) { return r.hoist; });
+    
+    // Store all roles on member for display
+    m.roleData = memberRoles[0] || null;
+    m.allRoles = memberRoles;
     
     var isOnline = m.status === 'online';
     
-    // If member has a role with hoist enabled, group by role name
-    if (memberRole && memberRole.hoist) {
-      if (!roleGroups[memberRole.id]) {
-        roleGroups[memberRole.id] = { role: memberRole, members: [] };
+    // If member has a hoisted role, group by that role
+    if (hoistedRole) {
+      if (!roleGroups[hoistedRole.id]) {
+        roleGroups[hoistedRole.id] = { role: hoistedRole, members: [] };
       }
-      roleGroups[memberRole.id].members.push(m);
+      roleGroups[hoistedRole.id].members.push(m);
       membersInHoistedRoles.add(m.id);
     } else if (isOnline) {
       ungroupedOnline.push(m);
@@ -3786,7 +3812,9 @@ function showRolesSubmenu(x, y, memberId) {
   var srv = state.servers.get(state.currentServer);
   if (!srv || !srv.roles) return;
   
-  var memberRoleId = srv.memberRoles ? srv.memberRoles[memberId] : null;
+  // Support multiple roles
+  var memberRoles = srv.memberRoles ? srv.memberRoles[memberId] : [];
+  if (!Array.isArray(memberRoles)) memberRoles = memberRoles ? [memberRoles] : [];
   
   // Sort roles by position (higher position first, like in settings)
   var sortedRoles = srv.roles.slice().sort(function(a, b) {
@@ -3795,7 +3823,7 @@ function showRolesSubmenu(x, y, memberId) {
   
   var list = qS('#roles-submenu-list');
   list.innerHTML = sortedRoles.map(function(role) {
-    var isAssigned = memberRoleId === role.id;
+    var isAssigned = memberRoles.includes(role.id);
     return '<div class="role-submenu-item" data-role-id="' + role.id + '" data-member-id="' + memberId + '">' +
       '<div class="role-dot" style="background: ' + (role.color || '#99aab5') + '"></div>' +
       '<span class="role-name">' + escapeHtml(role.name) + '</span>' +
@@ -3813,16 +3841,15 @@ function showRolesSubmenu(x, y, memberId) {
       
       if (isChecked) {
         // Remove role
-        send({ type: 'remove_member_role', serverId: state.currentServer, memberId: targetMemberId, roleId: roleId });
+        send({ type: 'assign_role', serverId: state.currentServer, memberId: targetMemberId, roleId: roleId, action: 'remove' });
         check.classList.remove('checked');
+        showNotification('Роль снята');
       } else {
-        // Assign role
+        // Add role
         send({ type: 'assign_role', serverId: state.currentServer, memberId: targetMemberId, roleId: roleId });
-        // Uncheck others and check this one
-        list.querySelectorAll('.role-check').forEach(function(c) { c.classList.remove('checked'); });
         check.classList.add('checked');
+        showNotification('Роль назначена');
       }
-      showNotification(isChecked ? 'Роль снята' : 'Роль назначена');
     };
   });
   
@@ -4069,6 +4096,38 @@ function showUserProfile(userId) {
     }
   }
   
+  // Set user roles on current server
+  var rolesSection = qS('#profile-roles-section');
+  var rolesContainer = qS('#profile-roles');
+  if (rolesSection && rolesContainer) {
+    var srv = state.servers.get(state.currentServer);
+    if (srv && srv.memberRoles && srv.roles) {
+      var userRoleIds = srv.memberRoles[userId] || [];
+      // Convert to array if it's a single value
+      if (!Array.isArray(userRoleIds)) {
+        userRoleIds = userRoleIds ? [userRoleIds] : [];
+      }
+      var userRoles = userRoleIds.map(function(rid) {
+        return srv.roles.find(function(r) { return r.id === rid; });
+      }).filter(Boolean);
+      
+      // Sort by position
+      userRoles.sort(function(a, b) { return (b.position || 0) - (a.position || 0); });
+      
+      if (userRoles.length > 0) {
+        rolesSection.style.display = 'block';
+        rolesContainer.innerHTML = userRoles.map(function(r) {
+          return '<div class="profile-role" style="--role-color: ' + (r.color || '#99aab5') + '">' +
+            '<span class="role-dot"></span>' + escapeHtml(r.name) + '</div>';
+        }).join('');
+      } else {
+        rolesSection.style.display = 'none';
+      }
+    } else {
+      rolesSection.style.display = 'none';
+    }
+  }
+  
   // Set mutual servers
   var mutualSection = qS('#profile-mutual-section');
   var mutualServers = qS('#profile-mutual-servers');
@@ -4122,6 +4181,22 @@ function showUserProfile(userId) {
   }
   
   modal.classList.add('active');
+  
+  // Close on background click
+  modal.onclick = function(e) {
+    if (e.target === modal) {
+      closeModal('user-profile-modal');
+    }
+  };
+  
+  // Close on ESC
+  var escHandler = function(e) {
+    if (e.key === 'Escape') {
+      closeModal('user-profile-modal');
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
 }
 
 function startPrivateCall(userId) {
