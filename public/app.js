@@ -14,6 +14,8 @@ var state = {
   userBio: null,
   userStatus: 'online',
   customStatus: null,
+  verifiedEmail: null,
+  emailVerified: false,
   isGuest: false,
   servers: new Map(),
   friends: new Map(),
@@ -106,6 +108,8 @@ function processAuthSuccess(msg) {
   state.userStatus = msg.user.status || 'online';
   state.customStatus = msg.user.customStatus;
   state.userCreatedAt = msg.user.createdAt;
+  state.verifiedEmail = msg.user.verifiedEmail || null;
+  state.emailVerified = msg.user.emailVerified || false;
   state.isGuest = msg.isGuest || false;
   
   if (msg.servers) {
@@ -873,6 +877,37 @@ function handleMessage(msg) {
       if (state.settings.sounds) {
         playMentionSound();
       }
+    },
+    
+    verification_sent: function() {
+      showNotification('Код отправлен на ' + msg.email);
+      qS('#email-change-form').classList.add('hidden');
+      qS('#email-verify-form').classList.remove('hidden');
+      state.pendingEmail = msg.email;
+      
+      // For dev mode without SMTP
+      if (msg.devCode) {
+        console.log('Dev verification code:', msg.devCode);
+        showNotification('Dev код: ' + msg.devCode);
+      }
+    },
+    
+    verification_error: function() {
+      showNotification(msg.message || 'Ошибка верификации');
+      // Shake code inputs if error
+      qSA('.code-input').forEach(function(inp) {
+        inp.classList.add('error');
+        setTimeout(function() { inp.classList.remove('error'); }, 300);
+      });
+    },
+    
+    email_verified: function() {
+      showNotification('Email успешно подтверждён!');
+      state.verifiedEmail = msg.email;
+      state.emailVerified = true;
+      updateEmailStatus();
+      qS('#email-verify-form').classList.add('hidden');
+      qS('#email-change-form').classList.remove('hidden');
     }
   };
   
@@ -4894,7 +4929,126 @@ document.addEventListener('DOMContentLoaded', function() {
     if (previewBanner && state.userBanner) {
       previewBanner.style.backgroundImage = 'url(' + state.userBanner + ')';
     }
+    
+    // Update email status
+    updateEmailStatus();
   };
+  
+  // Email verification
+  function updateEmailStatus() {
+    var emailEl = qS('#current-email');
+    var badgeEl = qS('#email-badge');
+    var emailInput = qS('#settings-email');
+    
+    if (emailEl) {
+      emailEl.textContent = state.verifiedEmail || 'Не привязана';
+    }
+    if (badgeEl) {
+      if (state.emailVerified && state.verifiedEmail) {
+        badgeEl.textContent = 'Подтверждена';
+        badgeEl.className = 'email-badge verified';
+      } else {
+        badgeEl.textContent = 'Не подтверждена';
+        badgeEl.className = 'email-badge unverified';
+      }
+    }
+    if (emailInput) {
+      emailInput.value = '';
+      emailInput.placeholder = state.verifiedEmail || 'email@example.com';
+    }
+  }
+  
+  // Send verification code
+  var sendVerifyBtn = qS('#send-verification-btn');
+  if (sendVerifyBtn) {
+    sendVerifyBtn.onclick = function() {
+      var email = qS('#settings-email').value.trim();
+      if (!email) {
+        showNotification('Введите email');
+        return;
+      }
+      send({ type: 'send_verification_code', email: email });
+    };
+  }
+  
+  // Verify code
+  var verifyCodeBtn = qS('#verify-code-btn');
+  if (verifyCodeBtn) {
+    verifyCodeBtn.onclick = function() {
+      var code = '';
+      qSA('.code-input').forEach(function(inp) {
+        code += inp.value;
+      });
+      if (code.length !== 6) {
+        showNotification('Введите 6-значный код');
+        return;
+      }
+      send({ type: 'verify_email_code', code: code });
+    };
+  }
+  
+  // Resend code
+  var resendBtn = qS('#resend-code-btn');
+  if (resendBtn) {
+    resendBtn.onclick = function() {
+      send({ type: 'resend_verification_code' });
+    };
+  }
+  
+  // Cancel verification
+  var cancelVerifyBtn = qS('#cancel-verify-btn');
+  if (cancelVerifyBtn) {
+    cancelVerifyBtn.onclick = function() {
+      qS('#email-verify-form').classList.add('hidden');
+      qS('#email-change-form').classList.remove('hidden');
+      qSA('.code-input').forEach(function(inp) { inp.value = ''; });
+    };
+  }
+  
+  // Code input handling
+  qSA('.code-input').forEach(function(input, index) {
+    input.oninput = function(e) {
+      var value = e.target.value;
+      if (value.length === 1) {
+        input.classList.add('filled');
+        // Move to next input
+        var next = qS('.code-input[data-index="' + (index + 1) + '"]');
+        if (next) next.focus();
+      } else {
+        input.classList.remove('filled');
+      }
+    };
+    
+    input.onkeydown = function(e) {
+      if (e.key === 'Backspace' && !input.value) {
+        // Move to previous input
+        var prev = qS('.code-input[data-index="' + (index - 1) + '"]');
+        if (prev) {
+          prev.focus();
+          prev.value = '';
+          prev.classList.remove('filled');
+        }
+      }
+    };
+    
+    // Handle paste
+    input.onpaste = function(e) {
+      e.preventDefault();
+      var paste = (e.clipboardData || window.clipboardData).getData('text');
+      var digits = paste.replace(/\D/g, '').slice(0, 6);
+      digits.split('').forEach(function(digit, i) {
+        var inp = qS('.code-input[data-index="' + i + '"]');
+        if (inp) {
+          inp.value = digit;
+          inp.classList.add('filled');
+        }
+      });
+      // Focus last filled or next empty
+      var lastIndex = Math.min(digits.length, 5);
+      var lastInp = qS('.code-input[data-index="' + lastIndex + '"]');
+      if (lastInp) lastInp.focus();
+    };
+  });
   
   // Bio character counter
   var bioTextarea = qS('#settings-bio');

@@ -4,6 +4,78 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+// ============ EMAIL ============
+let transporter = null;
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = process.env.SMTP_PORT || 587;
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
+const SMTP_FROM = process.env.SMTP_FROM || 'MrDomestos <noreply@mrdomestos.app>';
+
+if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+  try {
+    const nodemailer = require('nodemailer');
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT == 465,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS
+      }
+    });
+    console.log('Email service configured');
+  } catch (e) {
+    console.log('Nodemailer not available');
+  }
+} else {
+  console.log('SMTP not configured, email verification disabled');
+}
+
+// Store verification codes (userId -> { code, email, expires })
+const verificationCodes = new Map();
+
+function generateVerificationCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function sendVerificationEmail(email, code) {
+  if (!transporter) {
+    console.log('Email not configured, code:', code);
+    return false;
+  }
+  
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: email,
+      subject: 'Код подтверждения MrDomestos',
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 0 auto; padding: 40px 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #a855f7; margin: 0; font-size: 28px;">✦ MrDomestos</h1>
+          </div>
+          <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; padding: 30px; text-align: center;">
+            <h2 style="color: #ffffff; margin: 0 0 10px 0; font-size: 20px;">Код подтверждения</h2>
+            <p style="color: #9ca3af; margin: 0 0 25px 0; font-size: 14px;">Введите этот код в приложении</p>
+            <div style="background: rgba(168, 85, 247, 0.1); border: 2px solid #a855f7; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+              <span style="font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #a855f7;">${code}</span>
+            </div>
+            <p style="color: #6b7280; font-size: 12px; margin: 0;">Код действителен 10 минут</p>
+          </div>
+          <p style="color: #6b7280; font-size: 12px; text-align: center; margin-top: 20px;">
+            Если вы не запрашивали этот код, просто проигнорируйте это письмо.
+          </p>
+        </div>
+      `
+    });
+    return true;
+  } catch (e) {
+    console.error('Email send error:', e.message);
+    return false;
+  }
+}
+
 // ============ DATABASE ============
 const DATABASE_URL = process.env.DATABASE_URL;
 let pool = null;
@@ -640,7 +712,15 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, tag: account.tag, status: 'online', createdAt: account.createdAt },
+      user: { 
+        name: account.name, 
+        avatar: account.avatar, 
+        tag: account.tag, 
+        status: 'online', 
+        createdAt: account.createdAt,
+        verifiedEmail: account.verifiedEmail || null,
+        emailVerified: account.emailVerified || false
+      },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -677,7 +757,16 @@ const handlers = {
     send(ws, {
       type: 'auth_success',
       userId,
-      user: { name: account.name, avatar: account.avatar, tag: account.tag, status: account.status || 'online', customStatus: account.customStatus, createdAt: account.createdAt },
+      user: { 
+        name: account.name, 
+        avatar: account.avatar, 
+        tag: account.tag, 
+        status: account.status || 'online', 
+        customStatus: account.customStatus, 
+        createdAt: account.createdAt,
+        verifiedEmail: account.verifiedEmail || null,
+        emailVerified: account.emailVerified || false
+      },
       servers: getServersForUser(userId),
       friends: getFriendsList(userId),
       pendingRequests: getPendingRequests(userId)
@@ -1605,6 +1694,104 @@ const handlers = {
     saveAll();
     
     send(ws, { type: 'settings_updated', settings: acc.settings });
+  },
+
+  // Email verification
+  send_verification_code(ws, data) {
+    const { email } = data;
+    const userId = ws.userId;
+    const acc = getAccountById(userId);
+    if (!acc) return;
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      send(ws, { type: 'verification_error', message: 'Неверный формат email' });
+      return;
+    }
+    
+    // Check if email already used by another account
+    for (const [accEmail, accData] of accounts) {
+      if (accData.verifiedEmail === email && accData.id !== userId) {
+        send(ws, { type: 'verification_error', message: 'Этот email уже используется' });
+        return;
+      }
+    }
+    
+    // Generate and store code
+    const code = generateVerificationCode();
+    verificationCodes.set(userId, {
+      code,
+      email,
+      expires: Date.now() + 10 * 60 * 1000 // 10 minutes
+    });
+    
+    // Send email
+    sendVerificationEmail(email, code).then(success => {
+      if (success) {
+        send(ws, { type: 'verification_sent', email });
+      } else {
+        // For development without SMTP, still allow verification
+        console.log('Dev mode: verification code for', email, 'is', code);
+        send(ws, { type: 'verification_sent', email, devCode: transporter ? undefined : code });
+      }
+    });
+  },
+
+  verify_email_code(ws, data) {
+    const { code } = data;
+    const userId = ws.userId;
+    const acc = getAccountById(userId);
+    if (!acc) return;
+    
+    const verification = verificationCodes.get(userId);
+    if (!verification) {
+      send(ws, { type: 'verification_error', message: 'Сначала запросите код' });
+      return;
+    }
+    
+    if (Date.now() > verification.expires) {
+      verificationCodes.delete(userId);
+      send(ws, { type: 'verification_error', message: 'Код истёк, запросите новый' });
+      return;
+    }
+    
+    if (verification.code !== code) {
+      send(ws, { type: 'verification_error', message: 'Неверный код' });
+      return;
+    }
+    
+    // Success - save verified email
+    acc.verifiedEmail = verification.email;
+    acc.emailVerified = true;
+    verificationCodes.delete(userId);
+    saveAll();
+    
+    send(ws, { type: 'email_verified', email: verification.email });
+  },
+
+  resend_verification_code(ws) {
+    const userId = ws.userId;
+    const verification = verificationCodes.get(userId);
+    
+    if (!verification) {
+      send(ws, { type: 'verification_error', message: 'Сначала введите email' });
+      return;
+    }
+    
+    // Generate new code
+    const code = generateVerificationCode();
+    verification.code = code;
+    verification.expires = Date.now() + 10 * 60 * 1000;
+    
+    sendVerificationEmail(verification.email, code).then(success => {
+      if (success) {
+        send(ws, { type: 'verification_sent', email: verification.email });
+      } else {
+        console.log('Dev mode: new verification code is', code);
+        send(ws, { type: 'verification_sent', email: verification.email, devCode: transporter ? undefined : code });
+      }
+    });
   },
 
 

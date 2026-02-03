@@ -592,8 +592,30 @@
               <div class="form-group">
                 <label>Электронная почта</label>
                 <p class="hint">Используется для уведомлений и восстановления пароля</p>
-                <input type="email" id="settings-email" placeholder="email@example.com" disabled>
-                <button class="btn small secondary" id="change-email-btn">Изменить</button>
+                <div class="email-status" id="email-status">
+                  <span class="email-address" id="current-email">Не привязана</span>
+                  <span class="email-badge unverified" id="email-badge">Не подтверждена</span>
+                </div>
+                <div class="email-change-form" id="email-change-form">
+                  <input type="email" id="settings-email" placeholder="email@example.com">
+                  <button class="btn small primary" id="send-verification-btn">Отправить код</button>
+                </div>
+                <div class="email-verify-form hidden" id="email-verify-form">
+                  <p class="verify-hint">Введите 6-значный код, отправленный на вашу почту</p>
+                  <div class="code-inputs" id="code-inputs">
+                    <input type="text" maxlength="1" class="code-input" data-index="0">
+                    <input type="text" maxlength="1" class="code-input" data-index="1">
+                    <input type="text" maxlength="1" class="code-input" data-index="2">
+                    <input type="text" maxlength="1" class="code-input" data-index="3">
+                    <input type="text" maxlength="1" class="code-input" data-index="4">
+                    <input type="text" maxlength="1" class="code-input" data-index="5">
+                  </div>
+                  <div class="verify-actions">
+                    <button class="btn small primary" id="verify-code-btn">Подтвердить</button>
+                    <button class="btn small secondary" id="resend-code-btn">Отправить снова</button>
+                    <button class="btn small" id="cancel-verify-btn">Отмена</button>
+                  </div>
+                </div>
               </div>
             </div>
             
