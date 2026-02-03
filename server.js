@@ -775,6 +775,9 @@ const handlers = {
     const { email, password, loginCode } = data;
     const account = accounts.get(email);
     
+    // Debug: log all account emails
+    console.log('Available accounts:', [...accounts.keys()]);
+    
     if (!account || account.password !== hash(password)) {
       send(ws, { type: 'auth_error', message: 'Неверный email или пароль' });
       return;
@@ -792,6 +795,8 @@ const handlers = {
       saveAll();
     }
     
+    // TEMPORARILY DISABLED 2FA - uncomment later
+    /*
     // Check if 2FA is required (has verified email)
     if (account.verifiedEmail && account.emailVerified) {
       // If no code provided, send one
@@ -830,6 +835,7 @@ const handlers = {
       // Code verified, clean up
       loginVerificationCodes.delete(email);
     }
+    */
     
     const userId = account.id;
     ws.userId = userId;
