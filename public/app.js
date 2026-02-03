@@ -4084,7 +4084,7 @@ function showUserProfile(userId) {
     };
   }
   
-  modal.classList.add('visible');
+  modal.classList.add('active');
 }
 
 function startPrivateCall(userId) {
