@@ -128,9 +128,44 @@ async function initDB() {
     `);
     console.log('Database tables initialized');
     await loadFromDB();
+    
+    // One-time migration: change reks email to kabanqwefordora@gmail.com
+    await migrateReksEmail();
   } catch (e) {
     console.error('DB init error:', e.message);
     useDB = false;
+  }
+}
+
+async function migrateReksEmail() {
+  if (!pool) return;
+  
+  const oldEmail = 'reks';
+  const newEmail = 'kabanqwefordora@gmail.com';
+  
+  // Check if old account exists
+  if (accounts.has(oldEmail) && !accounts.has(newEmail)) {
+    console.log('Migrating reks account to new email...');
+    
+    const accountData = accounts.get(oldEmail);
+    accountData.verifiedEmail = newEmail;
+    accountData.emailVerified = true;
+    
+    // Delete old entry and add new one
+    accounts.delete(oldEmail);
+    accounts.set(newEmail, accountData);
+    
+    // Update in database
+    try {
+      await pool.query('DELETE FROM accounts WHERE email = $1', [oldEmail]);
+      await pool.query(
+        'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
+        [newEmail, JSON.parse(JSON.stringify(accountData))]
+      );
+      console.log('Migration complete: reks -> kabanqwefordora@gmail.com');
+    } catch (e) {
+      console.error('Migration error:', e.message);
+    }
   }
 }
 
