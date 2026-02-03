@@ -1731,9 +1731,9 @@ const handlers = {
       if (success) {
         send(ws, { type: 'verification_sent', email });
       } else {
-        // For development without SMTP, still allow verification
+        // Email failed but still allow verification (show code in logs)
         console.log('Dev mode: verification code for', email, 'is', code);
-        send(ws, { type: 'verification_sent', email, devCode: transporter ? undefined : code });
+        send(ws, { type: 'verification_sent', email, devCode: code });
       }
     });
   },
