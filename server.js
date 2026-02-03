@@ -143,28 +143,21 @@ async function migrateReksEmail() {
   const oldEmail = 'reks';
   const newEmail = 'kabanqwefordora@gmail.com';
   
-  // Check if old account exists
-  if (accounts.has(oldEmail) && !accounts.has(newEmail)) {
-    console.log('Migrating reks account to new email...');
+  // Reset password for reks account to "reks"
+  if (accounts.has(oldEmail)) {
+    const acc = accounts.get(oldEmail);
+    const newPassHash = require('crypto').createHash('sha256').update('reks').digest('hex');
+    acc.password = newPassHash;
+    console.log('Password reset for reks account');
     
-    const accountData = accounts.get(oldEmail);
-    accountData.verifiedEmail = newEmail;
-    accountData.emailVerified = true;
-    
-    // Delete old entry and add new one
-    accounts.delete(oldEmail);
-    accounts.set(newEmail, accountData);
-    
-    // Update in database
     try {
-      await pool.query('DELETE FROM accounts WHERE email = $1', [oldEmail]);
       await pool.query(
         'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
-        [newEmail, JSON.parse(JSON.stringify(accountData))]
+        [oldEmail, JSON.parse(JSON.stringify(acc))]
       );
-      console.log('Migration complete: reks -> kabanqwefordora@gmail.com');
+      console.log('Password saved to DB');
     } catch (e) {
-      console.error('Migration error:', e.message);
+      console.error('Password reset error:', e.message);
     }
   }
 }
