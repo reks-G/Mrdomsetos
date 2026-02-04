@@ -4376,7 +4376,7 @@ function showUserProfile(userId) {
 function startPrivateCall(userId) {
   // Open DM and start voice call
   openDM(userId);
-  showNotification('Звонок пока не реализован в ЛС');
+  startDMCall(userId, false);
 }
 
 function showVoiceUserContext(x, y, userId) {

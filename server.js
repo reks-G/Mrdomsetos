@@ -138,32 +138,7 @@ async function initDB() {
 }
 
 async function migrateReksEmail() {
-  if (!pool) return;
-  
-  // Force reset password for reks account
-  console.log('Checking reks account...');
-  console.log('All accounts:', [...accounts.keys()]);
-  
-  for (const [email, acc] of accounts) {
-    if (email === 'reks' || acc.name === 'reks') {
-      const crypto = require('crypto');
-      const newPassHash = crypto.createHash('sha256').update('reks').digest('hex');
-      console.log('Found reks account, email key:', email);
-      console.log('Old password hash:', acc.password?.substring(0, 20) + '...');
-      console.log('New password hash:', newPassHash.substring(0, 20) + '...');
-      acc.password = newPassHash;
-      
-      try {
-        await pool.query(
-          'INSERT INTO accounts (email, data) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET data = $2',
-          [email, JSON.parse(JSON.stringify(acc))]
-        );
-        console.log('Password reset SUCCESS for:', email);
-      } catch (e) {
-        console.error('Password reset error:', e.message);
-      }
-    }
-  }
+  // Migration complete, nothing to do
 }
 
 async function loadFromDB() {
