@@ -2174,56 +2174,61 @@ function getAudioContext() {
   return callSoundContext;
 }
 
-// Musical ringtone - beautiful modern melody
+// Ringtone audio element
+var ringtoneAudio = null;
+
+// Musical ringtone - using audio file
 function playRingtone() {
   stopAllCallSounds();
+  
+  // Create audio element with Discord-style ringtone (base64 encoded)
+  if (!ringtoneAudio) {
+    ringtoneAudio = new Audio();
+    // Use a web URL for the ringtone sound
+    ringtoneAudio.src = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+    ringtoneAudio.loop = true;
+    ringtoneAudio.volume = 0.5;
+  }
+  
+  ringtoneAudio.currentTime = 0;
+  ringtoneAudio.play().catch(function(e) {
+    console.log('Ringtone play failed, using fallback:', e);
+    playRingtoneFallback();
+  });
+}
+
+// Fallback ringtone using Web Audio API
+function playRingtoneFallback() {
   var ctx = getAudioContext();
   
-  // Beautiful chord-based melody (like modern phone ringtones)
   function playMelody() {
     var time = ctx.currentTime;
     
-    // First phrase - ascending
-    var notes1 = [
-      { freqs: [523.25, 659.25], dur: 0.2 },  // C5 + E5 (C major)
-      { freqs: [587.33, 739.99], dur: 0.2 },  // D5 + F#5
-      { freqs: [659.25, 783.99], dur: 0.2 },  // E5 + G5
-      { freqs: [783.99, 987.77], dur: 0.35 }, // G5 + B5
+    var notes = [
+      { freqs: [523.25, 659.25], dur: 0.2 },
+      { freqs: [587.33, 739.99], dur: 0.2 },
+      { freqs: [659.25, 783.99], dur: 0.2 },
+      { freqs: [783.99, 987.77], dur: 0.35 },
+      { freqs: [698.46, 880.00], dur: 0.2 },
+      { freqs: [659.25, 783.99], dur: 0.2 },
+      { freqs: [523.25, 659.25], dur: 0.4 },
     ];
     
-    // Second phrase - descending resolution
-    var notes2 = [
-      { freqs: [698.46, 880.00], dur: 0.2 },  // F5 + A5
-      { freqs: [659.25, 783.99], dur: 0.2 },  // E5 + G5
-      { freqs: [523.25, 659.25], dur: 0.4 },  // C5 + E5 (resolve)
-    ];
-    
-    var allNotes = notes1.concat(notes2);
-    
-    allNotes.forEach(function(note, index) {
+    notes.forEach(function(note) {
       note.freqs.forEach(function(freq, i) {
         var osc = ctx.createOscillator();
         var gain = ctx.createGain();
-        var filter = ctx.createBiquadFilter();
         
-        // Use triangle wave for softer sound
         osc.type = i === 0 ? 'sine' : 'triangle';
         osc.frequency.value = freq;
         
-        // Soft filter
-        filter.type = 'lowpass';
-        filter.frequency.value = 2000;
-        filter.Q.value = 1;
-        
-        // Volume envelope - soft attack and release
         var volume = i === 0 ? 0.12 : 0.06;
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(volume, time + 0.03);
         gain.gain.setValueAtTime(volume, time + note.dur - 0.05);
         gain.gain.exponentialRampToValueAtTime(0.001, time + note.dur);
         
-        osc.connect(filter);
-        filter.connect(gain);
+        osc.connect(gain);
         gain.connect(ctx.destination);
         
         osc.start(time);
@@ -2232,20 +2237,6 @@ function playRingtone() {
       
       time += note.dur;
     });
-    
-    // Add subtle reverb-like effect with delayed quiet notes
-    setTimeout(function() {
-      var echoGain = ctx.createGain();
-      echoGain.gain.value = 0.03;
-      
-      var echoOsc = ctx.createOscillator();
-      echoOsc.type = 'sine';
-      echoOsc.frequency.value = 523.25;
-      echoOsc.connect(echoGain);
-      echoGain.connect(ctx.destination);
-      echoOsc.start();
-      echoOsc.stop(ctx.currentTime + 0.3);
-    }, 1600);
   }
   
   playMelody();
@@ -2551,6 +2542,12 @@ function playScreenShareStop() {
 }
 
 function stopAllCallSounds() {
+  // Stop audio element ringtone
+  if (ringtoneAudio) {
+    ringtoneAudio.pause();
+    ringtoneAudio.currentTime = 0;
+  }
+  
   if (dmCallState.ringtoneInterval) {
     clearInterval(dmCallState.ringtoneInterval);
     dmCallState.ringtoneInterval = null;
