@@ -2174,85 +2174,123 @@ function getAudioContext() {
   return callSoundContext;
 }
 
-// Musical ringtone - pleasant melody
+// Musical ringtone - beautiful modern melody
 function playRingtone() {
   stopAllCallSounds();
   var ctx = getAudioContext();
   
-  // Musical notes (C major arpeggio pattern)
-  var melody = [
-    { freq: 523.25, dur: 0.15 },  // C5
-    { freq: 659.25, dur: 0.15 },  // E5
-    { freq: 783.99, dur: 0.15 },  // G5
-    { freq: 1046.50, dur: 0.3 },  // C6
-    { freq: 783.99, dur: 0.15 },  // G5
-    { freq: 659.25, dur: 0.15 },  // E5
-  ];
-  
+  // Beautiful chord-based melody (like modern phone ringtones)
   function playMelody() {
     var time = ctx.currentTime;
     
-    melody.forEach(function(note) {
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.value = note.freq;
-      
-      gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.15, time + 0.02);
-      gain.gain.setValueAtTime(0.15, time + note.dur - 0.03);
-      gain.gain.linearRampToValueAtTime(0, time + note.dur);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start(time);
-      osc.stop(time + note.dur);
+    // First phrase - ascending
+    var notes1 = [
+      { freqs: [523.25, 659.25], dur: 0.2 },  // C5 + E5 (C major)
+      { freqs: [587.33, 739.99], dur: 0.2 },  // D5 + F#5
+      { freqs: [659.25, 783.99], dur: 0.2 },  // E5 + G5
+      { freqs: [783.99, 987.77], dur: 0.35 }, // G5 + B5
+    ];
+    
+    // Second phrase - descending resolution
+    var notes2 = [
+      { freqs: [698.46, 880.00], dur: 0.2 },  // F5 + A5
+      { freqs: [659.25, 783.99], dur: 0.2 },  // E5 + G5
+      { freqs: [523.25, 659.25], dur: 0.4 },  // C5 + E5 (resolve)
+    ];
+    
+    var allNotes = notes1.concat(notes2);
+    
+    allNotes.forEach(function(note, index) {
+      note.freqs.forEach(function(freq, i) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        var filter = ctx.createBiquadFilter();
+        
+        // Use triangle wave for softer sound
+        osc.type = i === 0 ? 'sine' : 'triangle';
+        osc.frequency.value = freq;
+        
+        // Soft filter
+        filter.type = 'lowpass';
+        filter.frequency.value = 2000;
+        filter.Q.value = 1;
+        
+        // Volume envelope - soft attack and release
+        var volume = i === 0 ? 0.12 : 0.06;
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(volume, time + 0.03);
+        gain.gain.setValueAtTime(volume, time + note.dur - 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + note.dur);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + note.dur + 0.1);
+      });
       
       time += note.dur;
     });
+    
+    // Add subtle reverb-like effect with delayed quiet notes
+    setTimeout(function() {
+      var echoGain = ctx.createGain();
+      echoGain.gain.value = 0.03;
+      
+      var echoOsc = ctx.createOscillator();
+      echoOsc.type = 'sine';
+      echoOsc.frequency.value = 523.25;
+      echoOsc.connect(echoGain);
+      echoGain.connect(ctx.destination);
+      echoOsc.start();
+      echoOsc.stop(ctx.currentTime + 0.3);
+    }, 1600);
   }
   
   playMelody();
-  dmCallState.ringtoneInterval = setInterval(playMelody, 1800);
+  dmCallState.ringtoneInterval = setInterval(playMelody, 2500);
 }
 
-// Dialing tone - soft pulsing
+// Dialing tone - soft pleasant pulsing
 function playDialingTone() {
   stopAllCallSounds();
   var ctx = getAudioContext();
   
   function playBeep() {
-    var osc = ctx.createOscillator();
-    var osc2 = ctx.createOscillator();
-    var gain = ctx.createGain();
+    var time = ctx.currentTime;
     
-    osc.type = 'sine';
-    osc2.type = 'sine';
-    osc.frequency.value = 440;
-    osc2.frequency.value = 480;
+    // Two-tone beep like modern phones
+    var frequencies = [440, 480];
     
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.08, ctx.currentTime + 0.9);
-    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1);
-    
-    osc.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-    
-    osc.start();
-    osc2.start();
-    
-    setTimeout(function() {
-      osc.stop();
-      osc2.stop();
-    }, 1000);
+    frequencies.forEach(function(freq) {
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      var filter = ctx.createBiquadFilter();
+      
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      
+      filter.type = 'lowpass';
+      filter.frequency.value = 1500;
+      
+      // Soft envelope
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(0.06, time + 0.15);
+      gain.gain.setValueAtTime(0.06, time + 0.8);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 1.2);
+      
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(time);
+      osc.stop(time + 1.3);
+    });
   }
   
   playBeep();
-  dmCallState.dialingInterval = setInterval(playBeep, 3500);
+  dmCallState.dialingInterval = setInterval(playBeep, 3000);
 }
 
 // Call connected - pleasant chime
