@@ -2486,6 +2486,77 @@ function playScreenShareStop() {
   });
 }
 
+// Mic mute sound - low click
+function playMicMute() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 300;
+  
+  gain.gain.setValueAtTime(0.15, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start(time);
+  osc.stop(time + 0.1);
+}
+
+// Mic unmute sound - higher click
+function playMicUnmute() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  var osc = ctx.createOscillator();
+  var gain = ctx.createGain();
+  
+  osc.type = 'sine';
+  osc.frequency.value = 500;
+  
+  gain.gain.setValueAtTime(0.12, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+  
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  
+  osc.start(time);
+  osc.stop(time + 0.1);
+}
+
+// Voice join sound - pleasant ascending
+function playVoiceJoin() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  var notes = [
+    { freq: 440, start: 0, dur: 0.1 },
+    { freq: 554.37, start: 0.06, dur: 0.15 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.1, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
 function stopAllCallSounds() {
   // Stop audio element ringtone
   if (ringtoneAudio) {
@@ -5614,6 +5685,13 @@ document.addEventListener('DOMContentLoaded', function() {
     voiceMicBtn.onclick = function() {
       var muted = toggleMute();
       voiceMicBtn.classList.toggle('muted', muted);
+      
+      // Play sound
+      if (muted) {
+        playMicMute();
+      } else {
+        playMicUnmute();
+      }
       
       // Toggle icons
       var micOn = voiceMicBtn.querySelector('.mic-on');
