@@ -2211,52 +2211,6 @@ function playRingtone() {
   });
 }
 
-// Fallback ringtone using Web Audio API
-function playRingtoneFallback() {
-  var ctx = getAudioContext();
-  
-  function playMelody() {
-    var time = ctx.currentTime;
-    
-    var notes = [
-      { freqs: [523.25, 659.25], dur: 0.2 },
-      { freqs: [587.33, 739.99], dur: 0.2 },
-      { freqs: [659.25, 783.99], dur: 0.2 },
-      { freqs: [783.99, 987.77], dur: 0.35 },
-      { freqs: [698.46, 880.00], dur: 0.2 },
-      { freqs: [659.25, 783.99], dur: 0.2 },
-      { freqs: [523.25, 659.25], dur: 0.4 },
-    ];
-    
-    notes.forEach(function(note) {
-      note.freqs.forEach(function(freq, i) {
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        
-        osc.type = i === 0 ? 'sine' : 'triangle';
-        osc.frequency.value = freq;
-        
-        var volume = i === 0 ? 0.12 : 0.06;
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(volume, time + 0.03);
-        gain.gain.setValueAtTime(volume, time + note.dur - 0.05);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + note.dur);
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        
-        osc.start(time);
-        osc.stop(time + note.dur + 0.1);
-      });
-      
-      time += note.dur;
-    });
-  }
-  
-  playMelody();
-  dmCallState.ringtoneInterval = setInterval(playMelody, 2500);
-}
-
 // Dialing tone - same music as ringtone
 function playDialingTone() {
   stopAllCallSounds();
