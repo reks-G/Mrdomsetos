@@ -2180,20 +2180,27 @@ var ringtoneAudio = null;
 // Musical ringtone - using audio file
 function playRingtone() {
   stopAllCallSounds();
+  console.log('Playing ringtone...');
   
   // Create audio element with custom ringtone
   if (!ringtoneAudio) {
     ringtoneAudio = new Audio();
     ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
     ringtoneAudio.loop = true;
-    ringtoneAudio.volume = 0.5;
   }
   
+  ringtoneAudio.volume = 0.7;
   ringtoneAudio.currentTime = 0;
-  ringtoneAudio.play().catch(function(e) {
-    console.log('Ringtone play failed, using fallback:', e);
-    playRingtoneFallback();
-  });
+  
+  var playPromise = ringtoneAudio.play();
+  if (playPromise !== undefined) {
+    playPromise.then(function() {
+      console.log('Ringtone playing successfully');
+    }).catch(function(e) {
+      console.log('Ringtone play failed, using fallback:', e);
+      playRingtoneFallback();
+    });
+  }
 }
 
 // Fallback ringtone using Web Audio API
@@ -2245,19 +2252,28 @@ function playRingtoneFallback() {
 // Dialing tone - same music as ringtone
 function playDialingTone() {
   stopAllCallSounds();
+  console.log('Playing dialing tone...');
   
   // Use same audio as ringtone for dialing
   if (!ringtoneAudio) {
     ringtoneAudio = new Audio();
     ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
     ringtoneAudio.loop = true;
-    ringtoneAudio.volume = 0.5;
   }
   
+  ringtoneAudio.volume = 0.7;
   ringtoneAudio.currentTime = 0;
-  ringtoneAudio.play().catch(function(e) {
-    console.log('Dialing tone play failed:', e);
-  });
+  
+  var playPromise = ringtoneAudio.play();
+  if (playPromise !== undefined) {
+    playPromise.then(function() {
+      console.log('Dialing tone playing successfully');
+    }).catch(function(e) {
+      console.log('Dialing tone play failed:', e);
+      // Try fallback with user interaction
+      playRingtoneFallback();
+    });
+  }
 }
 
 // Call connected - pleasant chime
