@@ -2181,11 +2181,10 @@ var ringtoneAudio = null;
 function playRingtone() {
   stopAllCallSounds();
   
-  // Create audio element with Discord-style ringtone (base64 encoded)
+  // Create audio element with custom ringtone
   if (!ringtoneAudio) {
     ringtoneAudio = new Audio();
-    // Use a web URL for the ringtone sound
-    ringtoneAudio.src = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
+    ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
     ringtoneAudio.loop = true;
     ringtoneAudio.volume = 0.5;
   }
