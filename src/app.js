@@ -2674,7 +2674,6 @@ function startDMCall(userId, withVideo) {
   if (nameEl) nameEl.textContent = friendName;
   if (statusEl) {
     statusEl.textContent = 'Вызов...';
-    statusEl.classList.remove('connected');
   }
   
   dmCallState.isVideoEnabled = withVideo;
@@ -2691,19 +2690,21 @@ function startDMCall(userId, withVideo) {
     // Play dialing tone
     playDialingTone();
     
-    // Show local video if video call
-    if (withVideo) {
-      var localVideo = qS('#dm-local-video');
-      if (localVideo) {
-        localVideo.srcObject = stream;
+    // Show call area
+    var callArea = qS('#dm-call-area');
+    if (callArea) {
+      callArea.classList.add('active');
+      if (withVideo) {
+        callArea.classList.add('video-active');
+        var localVideo = qS('#dm-local-video');
+        if (localVideo) {
+          localVideo.srcObject = stream;
+        }
       }
-      qS('#dm-call-video-container').classList.add('active');
     }
     
     // Send call request
     send({ type: 'dm_call_request', to: userId, withVideo: withVideo });
-    
-    openModal('dm-call-modal');
     
     // Timeout for no answer
     setTimeout(function() {
@@ -2732,6 +2733,11 @@ function acceptDMCall(fromId, withVideo) {
   
   closeModal('incoming-call-modal');
   
+  // Open DM if not already open
+  if (state.currentDM !== fromId) {
+    openDM(fromId);
+  }
+  
   // Setup call UI
   var avatarEl = qS('#dm-call-avatar');
   var nameEl = qS('#dm-call-name');
@@ -2747,7 +2753,6 @@ function acceptDMCall(fromId, withVideo) {
   if (nameEl) nameEl.textContent = friendName;
   if (statusEl) {
     statusEl.textContent = 'Подключение...';
-    statusEl.classList.remove('connected');
   }
   
   dmCallState.peerId = fromId;
@@ -2761,16 +2766,19 @@ function acceptDMCall(fromId, withVideo) {
     dmCallState.localStream = stream;
     dmCallState.active = true;
     
-    if (withVideo) {
-      var localVideo = qS('#dm-local-video');
-      if (localVideo) localVideo.srcObject = stream;
-      qS('#dm-call-video-container').classList.add('active');
+    // Show call area
+    var callArea = qS('#dm-call-area');
+    if (callArea) {
+      callArea.classList.add('active');
+      if (withVideo) {
+        callArea.classList.add('video-active');
+        var localVideo = qS('#dm-local-video');
+        if (localVideo) localVideo.srcObject = stream;
+      }
     }
     
     // Send accept
     send({ type: 'dm_call_accept', to: fromId, withVideo: withVideo });
-    
-    openModal('dm-call-modal');
     
     // Create peer connection
     createDMPeerConnection(fromId, false);
@@ -2938,17 +2946,35 @@ function endDMCall() {
   var remoteVideo = qS('#dm-remote-video');
   if (localVideo) localVideo.srcObject = null;
   if (remoteVideo) remoteVideo.srcObject = null;
-  qS('#dm-call-video-container')?.classList.remove('active');
   
-  // Close chat and settings panels
-  var chatPanel = qS('#dm-call-chat');
-  var settingsPanel = qS('#dm-call-settings');
-  if (chatPanel) chatPanel.classList.remove('active');
-  if (settingsPanel) settingsPanel.classList.remove('active');
+  // Hide call area
+  var callArea = qS('#dm-call-area');
+  if (callArea) {
+    callArea.classList.remove('active', 'video-active');
+  }
   
-  // Clear chat messages
-  var chatMessages = qS('#dm-call-chat-messages');
-  if (chatMessages) chatMessages.innerHTML = '';
+  // Close settings dropdown
+  var settingsMenu = qS('#dm-call-settings-menu');
+  if (settingsMenu) settingsMenu.classList.remove('active');
+  
+  // Reset button states
+  var micBtn = qS('#dm-call-mic');
+  var videoBtn = qS('#dm-call-video-toggle');
+  var screenBtn = qS('#dm-call-screen');
+  var chatBtn = qS('#dm-call-chat-btn');
+  var settingsBtn = qS('#dm-call-settings-btn');
+  
+  if (micBtn) {
+    micBtn.classList.remove('muted');
+    var micOn = micBtn.querySelector('.mic-on');
+    var micOff = micBtn.querySelector('.mic-off');
+    if (micOn) micOn.style.display = 'block';
+    if (micOff) micOff.style.display = 'none';
+  }
+  if (videoBtn) videoBtn.classList.remove('active');
+  if (screenBtn) screenBtn.classList.remove('active');
+  if (chatBtn) chatBtn.classList.remove('active');
+  if (settingsBtn) settingsBtn.classList.remove('active');
   
   // Send end signal
   if (dmCallState.peerId) {
@@ -2965,7 +2991,6 @@ function endDMCall() {
   dmCallState.isIncoming = false;
   dmCallState.callDuration = 0;
   
-  closeModal('dm-call-modal');
   closeModal('incoming-call-modal');
 }
 
@@ -2986,16 +3011,20 @@ function toggleDMCallMute() {
   
   var btn = qS('#dm-call-mic');
   if (btn) {
-    btn.classList.toggle('active', dmCallState.isMuted);
-    btn.querySelector('.mic-on').style.display = dmCallState.isMuted ? 'none' : 'block';
-    btn.querySelector('.mic-off').style.display = dmCallState.isMuted ? 'block' : 'none';
+    btn.classList.toggle('muted', dmCallState.isMuted);
+    var micOn = btn.querySelector('.mic-on');
+    var micOff = btn.querySelector('.mic-off');
+    if (micOn) micOn.style.display = dmCallState.isMuted ? 'none' : 'block';
+    if (micOff) micOff.style.display = dmCallState.isMuted ? 'block' : 'none';
   }
 }
 
 function toggleDMCallVideo() {
   if (!dmCallState.localStream) return;
   
+  var callArea = qS('#dm-call-area');
   var videoTracks = dmCallState.localStream.getVideoTracks();
+  
   if (videoTracks.length === 0) {
     // Need to add video
     navigator.mediaDevices.getUserMedia({ video: true }).then(function(stream) {
@@ -3008,10 +3037,11 @@ function toggleDMCallVideo() {
       
       var localVideo = qS('#dm-local-video');
       if (localVideo) localVideo.srcObject = dmCallState.localStream;
-      qS('#dm-call-video-container').classList.add('active');
+      if (callArea) callArea.classList.add('video-active');
       
       dmCallState.isVideoEnabled = true;
-      qS('#dm-call-video-toggle').classList.add('active');
+      var btn = qS('#dm-call-video-toggle');
+      if (btn) btn.classList.add('active');
       
       // Play camera on sound
       playCameraOn();
@@ -3032,11 +3062,15 @@ function toggleDMCallVideo() {
       playCameraOff();
     }
     
-    qS('#dm-call-video-toggle').classList.toggle('active', dmCallState.isVideoEnabled);
-    if (!dmCallState.isVideoEnabled) {
-      qS('#dm-call-video-container').classList.remove('active');
-    } else {
-      qS('#dm-call-video-container').classList.add('active');
+    var btn = qS('#dm-call-video-toggle');
+    if (btn) btn.classList.toggle('active', dmCallState.isVideoEnabled);
+    
+    if (callArea) {
+      if (dmCallState.isVideoEnabled) {
+        callArea.classList.add('video-active');
+      } else {
+        callArea.classList.remove('video-active');
+      }
     }
   }
 }
@@ -5229,36 +5263,16 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
   
-  // DM Call Chat Toggle
+  // DM Call Chat Toggle - now just scrolls to chat below
   var dmCallChatBtn = qS('#dm-call-chat-btn');
   if (dmCallChatBtn) {
     dmCallChatBtn.onclick = function() {
-      var chatPanel = qS('#dm-call-chat');
-      if (chatPanel) {
-        chatPanel.classList.toggle('active');
-        dmCallChatBtn.classList.toggle('active', chatPanel.classList.contains('active'));
+      // Scroll to message input
+      var dmInput = qS('#dm-input');
+      if (dmInput) {
+        dmInput.focus();
+        dmInput.scrollIntoView({ behavior: 'smooth' });
       }
-    };
-  }
-  
-  // DM Call Chat Close
-  var dmCallChatClose = qS('#dm-call-chat-close');
-  if (dmCallChatClose) {
-    dmCallChatClose.onclick = function() {
-      qS('#dm-call-chat').classList.remove('active');
-      qS('#dm-call-chat-btn').classList.remove('active');
-    };
-  }
-  
-  // DM Call Chat Send
-  var dmCallChatSend = qS('#dm-call-chat-send');
-  var dmCallChatInput = qS('#dm-call-chat-input');
-  if (dmCallChatSend && dmCallChatInput) {
-    dmCallChatSend.onclick = function() {
-      sendDMCallChatMessage();
-    };
-    dmCallChatInput.onkeypress = function(e) {
-      if (e.key === 'Enter') sendDMCallChatMessage();
     };
   }
   
@@ -5266,23 +5280,14 @@ document.addEventListener('DOMContentLoaded', function() {
   var dmCallSettingsBtn = qS('#dm-call-settings-btn');
   if (dmCallSettingsBtn) {
     dmCallSettingsBtn.onclick = function() {
-      var settingsPanel = qS('#dm-call-settings');
-      if (settingsPanel) {
-        settingsPanel.classList.toggle('active');
-        dmCallSettingsBtn.classList.toggle('active', settingsPanel.classList.contains('active'));
-        if (settingsPanel.classList.contains('active')) {
+      var settingsMenu = qS('#dm-call-settings-menu');
+      if (settingsMenu) {
+        settingsMenu.classList.toggle('active');
+        dmCallSettingsBtn.classList.toggle('active', settingsMenu.classList.contains('active'));
+        if (settingsMenu.classList.contains('active')) {
           loadDMCallDevices();
         }
       }
-    };
-  }
-  
-  // DM Call Settings Close
-  var dmCallSettingsClose = qS('#dm-call-settings-close');
-  if (dmCallSettingsClose) {
-    dmCallSettingsClose.onclick = function() {
-      qS('#dm-call-settings').classList.remove('active');
-      qS('#dm-call-settings-btn').classList.remove('active');
     };
   }
   
