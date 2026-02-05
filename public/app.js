@@ -2425,6 +2425,64 @@ function playUnmuteSound() {
   setTimeout(function() { osc.stop(); }, 100);
 }
 
+// Camera on sound - two ascending notes
+function playCameraOn() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  var notes = [
+    { freq: 523.25, start: 0, dur: 0.08 },
+    { freq: 659.25, start: 0.05, dur: 0.12 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.1, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
+// Camera off sound - two descending notes
+function playCameraOff() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  var notes = [
+    { freq: 659.25, start: 0, dur: 0.08 },
+    { freq: 523.25, start: 0.05, dur: 0.12 }
+  ];
+  
+  notes.forEach(function(note) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    
+    gain.gain.setValueAtTime(0, time + note.start);
+    gain.gain.linearRampToValueAtTime(0.08, time + note.start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + note.start + note.dur);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(time + note.start);
+    osc.stop(time + note.start + note.dur);
+  });
+}
+
 // Screen share start sound - notification chime
 function playScreenShareStart() {
   var ctx = getAudioContext();
@@ -2922,6 +2980,9 @@ function toggleDMCallVideo() {
       
       dmCallState.isVideoEnabled = true;
       qS('#dm-call-video-toggle').classList.add('active');
+      
+      // Play camera on sound
+      playCameraOn();
     }).catch(function(err) {
       showNotification('Не удалось включить камеру');
     });
@@ -2931,6 +2992,13 @@ function toggleDMCallVideo() {
     videoTracks.forEach(function(track) {
       track.enabled = dmCallState.isVideoEnabled;
     });
+    
+    // Play camera sound
+    if (dmCallState.isVideoEnabled) {
+      playCameraOn();
+    } else {
+      playCameraOff();
+    }
     
     qS('#dm-call-video-toggle').classList.toggle('active', dmCallState.isVideoEnabled);
     if (!dmCallState.isVideoEnabled) {
