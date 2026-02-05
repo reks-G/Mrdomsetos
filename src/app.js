@@ -2180,9 +2180,10 @@ var ringtoneAudio = null;
 // Preload ringtone on page load
 function preloadRingtone() {
   ringtoneAudio = new Audio();
-  ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
+  // Discord-style ringtone
+  ringtoneAudio.src = 'https://cdn.discordapp.com/sounds/call_ringing_beat.ogg';
   ringtoneAudio.loop = true;
-  ringtoneAudio.volume = 0.3;
+  ringtoneAudio.volume = 0.5;
   ringtoneAudio.preload = 'auto';
   
   ringtoneAudio.addEventListener('canplaythrough', function() {
