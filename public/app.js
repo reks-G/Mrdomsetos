@@ -2182,7 +2182,7 @@ function preloadRingtone() {
   ringtoneAudio = new Audio();
   ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
   ringtoneAudio.loop = true;
-  ringtoneAudio.volume = 0.7;
+  ringtoneAudio.volume = 0.3;
   ringtoneAudio.preload = 'auto';
   
   ringtoneAudio.addEventListener('canplaythrough', function() {
