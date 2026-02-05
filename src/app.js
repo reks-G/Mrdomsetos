@@ -2177,30 +2177,38 @@ function getAudioContext() {
 // Ringtone audio element
 var ringtoneAudio = null;
 
+// Preload ringtone on page load
+function preloadRingtone() {
+  ringtoneAudio = new Audio();
+  ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
+  ringtoneAudio.loop = true;
+  ringtoneAudio.volume = 0.7;
+  ringtoneAudio.preload = 'auto';
+  
+  ringtoneAudio.addEventListener('canplaythrough', function() {
+    console.log('Ringtone loaded successfully');
+  });
+  
+  ringtoneAudio.addEventListener('error', function(e) {
+    console.error('Ringtone load error:', e);
+  });
+}
+
 // Musical ringtone - using audio file
 function playRingtone() {
   stopAllCallSounds();
   console.log('Playing ringtone...');
   
-  // Create audio element with custom ringtone
   if (!ringtoneAudio) {
-    ringtoneAudio = new Audio();
-    ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
-    ringtoneAudio.loop = true;
+    preloadRingtone();
   }
   
-  ringtoneAudio.volume = 0.7;
   ringtoneAudio.currentTime = 0;
-  
-  var playPromise = ringtoneAudio.play();
-  if (playPromise !== undefined) {
-    playPromise.then(function() {
-      console.log('Ringtone playing successfully');
-    }).catch(function(e) {
-      console.log('Ringtone play failed, using fallback:', e);
-      playRingtoneFallback();
-    });
-  }
+  ringtoneAudio.play().then(function() {
+    console.log('Ringtone playing!');
+  }).catch(function(e) {
+    console.error('Ringtone play error:', e);
+  });
 }
 
 // Fallback ringtone using Web Audio API
@@ -2254,26 +2262,16 @@ function playDialingTone() {
   stopAllCallSounds();
   console.log('Playing dialing tone...');
   
-  // Use same audio as ringtone for dialing
   if (!ringtoneAudio) {
-    ringtoneAudio = new Audio();
-    ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
-    ringtoneAudio.loop = true;
+    preloadRingtone();
   }
   
-  ringtoneAudio.volume = 0.7;
   ringtoneAudio.currentTime = 0;
-  
-  var playPromise = ringtoneAudio.play();
-  if (playPromise !== undefined) {
-    playPromise.then(function() {
-      console.log('Dialing tone playing successfully');
-    }).catch(function(e) {
-      console.log('Dialing tone play failed:', e);
-      // Try fallback with user interaction
-      playRingtoneFallback();
-    });
-  }
+  ringtoneAudio.play().then(function() {
+    console.log('Dialing tone playing!');
+  }).catch(function(e) {
+    console.error('Dialing tone play error:', e);
+  });
 }
 
 // Call connected - pleasant chime
@@ -4594,6 +4592,9 @@ function resetPermissionCheckboxes() {
 
 // ============ EVENT LISTENERS ============
 document.addEventListener('DOMContentLoaded', function() {
+  // Preload ringtone
+  preloadRingtone();
+  
   // Check for invite code in URL
   var urlParams = new URLSearchParams(window.location.search);
   var inviteCode = urlParams.get('invite');
