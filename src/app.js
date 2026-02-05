@@ -2242,45 +2242,22 @@ function playRingtoneFallback() {
   dmCallState.ringtoneInterval = setInterval(playMelody, 2500);
 }
 
-// Dialing tone - soft pleasant pulsing
+// Dialing tone - same music as ringtone
 function playDialingTone() {
   stopAllCallSounds();
-  var ctx = getAudioContext();
   
-  function playBeep() {
-    var time = ctx.currentTime;
-    
-    // Two-tone beep like modern phones
-    var frequencies = [440, 480];
-    
-    frequencies.forEach(function(freq) {
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      var filter = ctx.createBiquadFilter();
-      
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      
-      filter.type = 'lowpass';
-      filter.frequency.value = 1500;
-      
-      // Soft envelope
-      gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(0.06, time + 0.15);
-      gain.gain.setValueAtTime(0.06, time + 0.8);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 1.2);
-      
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start(time);
-      osc.stop(time + 1.3);
-    });
+  // Use same audio as ringtone for dialing
+  if (!ringtoneAudio) {
+    ringtoneAudio = new Audio();
+    ringtoneAudio.src = 'https://files.catbox.moe/8ajph2.mp3';
+    ringtoneAudio.loop = true;
+    ringtoneAudio.volume = 0.5;
   }
   
-  playBeep();
-  dmCallState.dialingInterval = setInterval(playBeep, 3000);
+  ringtoneAudio.currentTime = 0;
+  ringtoneAudio.play().catch(function(e) {
+    console.log('Dialing tone play failed:', e);
+  });
 }
 
 // Call connected - pleasant chime
