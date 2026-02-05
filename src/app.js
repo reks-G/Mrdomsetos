@@ -1961,7 +1961,18 @@ var rtcConfig = {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' }
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN servers for better NAT traversal
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ],
   iceCandidatePoolSize: 10
 };
@@ -2170,6 +2181,7 @@ var dmCallState = {
   isVideoEnabled: false,
   isScreenSharing: false,
   isIncoming: false,
+  noiseSuppressionEnabled: true,
   callTimer: null,
   callDuration: 0,
   ringtoneInterval: null,
@@ -2210,6 +2222,41 @@ function preloadRingtone() {
   });
 }
 
+// Fallback ringtone using Web Audio API
+function playRingtoneFallback() {
+  var ctx = getAudioContext();
+  var time = ctx.currentTime;
+  
+  // Simple repeating tone pattern
+  function playTone(startTime) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    
+    osc.type = 'sine';
+    osc.frequency.value = 440;
+    
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+    gain.gain.linearRampToValueAtTime(0, startTime + 0.4);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start(startTime);
+    osc.stop(startTime + 0.5);
+  }
+  
+  // Play pattern
+  for (var i = 0; i < 4; i++) {
+    playTone(time + i * 0.5);
+  }
+  
+  // Repeat if still in call
+  if (dmCallState.active && !dmCallState.peerConnection) {
+    dmCallState.ringtoneInterval = setTimeout(playRingtoneFallback, 2500);
+  }
+}
+
 // Musical ringtone - using audio file
 function playRingtone() {
   stopAllCallSounds();
@@ -2223,7 +2270,8 @@ function playRingtone() {
   ringtoneAudio.play().then(function() {
     console.log('Ringtone playing!');
   }).catch(function(e) {
-    console.error('Ringtone play error:', e);
+    console.error('Ringtone play error, using fallback:', e);
+    playRingtoneFallback();
   });
 }
 
@@ -2240,7 +2288,8 @@ function playDialingTone() {
   ringtoneAudio.play().then(function() {
     console.log('Dialing tone playing!');
   }).catch(function(e) {
-    console.error('Dialing tone play error:', e);
+    console.error('Dialing tone play error, using fallback:', e);
+    playRingtoneFallback();
   });
 }
 
@@ -2637,11 +2686,14 @@ function stopAllCallSounds() {
     ringtoneAudio.currentTime = 0;
   }
   
+  // Clear fallback ringtone timeout
   if (dmCallState.ringtoneInterval) {
+    clearTimeout(dmCallState.ringtoneInterval);
     clearInterval(dmCallState.ringtoneInterval);
     dmCallState.ringtoneInterval = null;
   }
   if (dmCallState.dialingInterval) {
+    clearTimeout(dmCallState.dialingInterval);
     clearInterval(dmCallState.dialingInterval);
     dmCallState.dialingInterval = null;
   }
@@ -3080,6 +3132,7 @@ function toggleDMCallScreenShare() {
   if (!dmCallState.active || !dmCallState.peerConnection) return;
   
   var screenBtn = qS('#dm-call-screen');
+  var callArea = qS('#dm-call-area');
   
   if (dmCallState.isScreenSharing) {
     // Stop screen share
@@ -3091,6 +3144,15 @@ function toggleDMCallScreenShare() {
     }
     dmCallState.isScreenSharing = false;
     if (screenBtn) screenBtn.classList.remove('active');
+    
+    // Restore local video if camera was on
+    if (dmCallState.localStream && dmCallState.isVideoEnabled) {
+      var localVideo = qS('#dm-local-video');
+      if (localVideo) localVideo.srcObject = dmCallState.localStream;
+    } else {
+      if (callArea) callArea.classList.remove('video-active');
+    }
+    
     playScreenShareStop();
     showNotification('Демонстрация экрана остановлена');
   } else {
@@ -3113,7 +3175,7 @@ function toggleDMCallScreenShare() {
       // Show local screen in video
       var localVideo = qS('#dm-local-video');
       if (localVideo) localVideo.srcObject = stream;
-      qS('#dm-call-video-container').classList.add('active');
+      if (callArea) callArea.classList.add('video-active');
       
       if (screenBtn) screenBtn.classList.add('active');
       playScreenShareStart();
@@ -3132,6 +3194,8 @@ function toggleDMCallScreenShare() {
           }
           var localVideo = qS('#dm-local-video');
           if (localVideo) localVideo.srcObject = dmCallState.localStream;
+        } else {
+          if (callArea) callArea.classList.remove('video-active');
         }
         playScreenShareStop();
       };
@@ -3177,7 +3241,139 @@ function addDMCallChatMessage(author, text, isOwn) {
   container.scrollTop = container.scrollHeight;
 }
 
-// DM Call Settings - Load Devices
+// Close all DM call device menus
+function closeAllDMCallMenus() {
+  var menus = document.querySelectorAll('.dm-call-device-menu');
+  menus.forEach(function(menu) {
+    menu.classList.remove('active');
+  });
+}
+
+// Load mic list for dropdown
+function loadDMCallMicList() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    var list = qS('#dm-call-mic-list');
+    if (!list) return;
+    
+    var currentDeviceId = '';
+    if (dmCallState.localStream) {
+      var track = dmCallState.localStream.getAudioTracks()[0];
+      if (track) currentDeviceId = track.getSettings().deviceId;
+    }
+    
+    list.innerHTML = '';
+    devices.filter(function(d) { return d.kind === 'audioinput'; }).forEach(function(device, i) {
+      var item = document.createElement('div');
+      item.className = 'dm-call-device-item' + (device.deviceId === currentDeviceId ? ' selected' : '');
+      item.textContent = device.label || 'Микрофон ' + (i + 1);
+      item.onclick = function(e) {
+        e.stopPropagation();
+        changeDMCallMic(device.deviceId);
+        closeAllDMCallMenus();
+      };
+      list.appendChild(item);
+    });
+  });
+}
+
+// Load camera list for dropdown
+function loadDMCallCameraList() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    var list = qS('#dm-call-camera-list');
+    if (!list) return;
+    
+    var currentDeviceId = '';
+    if (dmCallState.localStream) {
+      var track = dmCallState.localStream.getVideoTracks()[0];
+      if (track) currentDeviceId = track.getSettings().deviceId;
+    }
+    
+    list.innerHTML = '';
+    devices.filter(function(d) { return d.kind === 'videoinput'; }).forEach(function(device, i) {
+      var item = document.createElement('div');
+      item.className = 'dm-call-device-item' + (device.deviceId === currentDeviceId ? ' selected' : '');
+      item.textContent = device.label || 'Камера ' + (i + 1);
+      item.onclick = function(e) {
+        e.stopPropagation();
+        changeDMCallCamera(device.deviceId);
+        closeAllDMCallMenus();
+      };
+      list.appendChild(item);
+    });
+  });
+}
+
+// Load speaker list for dropdown
+function loadDMCallSpeakerList() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    var list = qS('#dm-call-speaker-list');
+    if (!list) return;
+    
+    list.innerHTML = '';
+    devices.filter(function(d) { return d.kind === 'audiooutput'; }).forEach(function(device, i) {
+      var item = document.createElement('div');
+      item.className = 'dm-call-device-item';
+      item.textContent = device.label || 'Динамик ' + (i + 1);
+      item.onclick = function(e) {
+        e.stopPropagation();
+        // Set audio output device
+        var audio = qS('#dm-call-audio');
+        if (audio && audio.setSinkId) {
+          audio.setSinkId(device.deviceId).then(function() {
+            showNotification('Динамик изменён');
+          }).catch(function() {
+            showNotification('Не удалось сменить динамик');
+          });
+        }
+        closeAllDMCallMenus();
+      };
+      list.appendChild(item);
+    });
+  });
+}
+
+// Toggle noise suppression
+function toggleDMCallNoiseSuppression() {
+  if (!dmCallState.localStream) return;
+  
+  dmCallState.noiseSuppressionEnabled = !dmCallState.noiseSuppressionEnabled;
+  
+  var btn = qS('#dm-call-noise');
+  if (btn) {
+    btn.classList.toggle('active', dmCallState.noiseSuppressionEnabled);
+  }
+  
+  // Re-get audio with new settings
+  navigator.mediaDevices.getUserMedia({
+    audio: {
+      noiseSuppression: dmCallState.noiseSuppressionEnabled,
+      echoCancellation: true,
+      autoGainControl: true
+    }
+  }).then(function(stream) {
+    var newTrack = stream.getAudioTracks()[0];
+    
+    var oldTrack = dmCallState.localStream.getAudioTracks()[0];
+    if (oldTrack) {
+      dmCallState.localStream.removeTrack(oldTrack);
+      oldTrack.stop();
+    }
+    dmCallState.localStream.addTrack(newTrack);
+    
+    if (dmCallState.peerConnection) {
+      var sender = dmCallState.peerConnection.getSenders().find(function(s) {
+        return s.track && s.track.kind === 'audio';
+      });
+      if (sender) sender.replaceTrack(newTrack);
+    }
+    
+    showNotification(dmCallState.noiseSuppressionEnabled ? 'Шумоподавление включено' : 'Шумоподавление выключено');
+  }).catch(function(err) {
+    console.error('Noise suppression error:', err);
+  });
+}
+
+// DM Call Settings - Load Devices (legacy, kept for compatibility)
 function loadDMCallDevices() {
   navigator.mediaDevices.enumerateDevices().then(function(devices) {
     var micSelect = qS('#dm-call-mic-select');
@@ -3311,10 +3507,20 @@ function createPeerConnection(oderId) {
   var pc = new RTCPeerConnection(rtcConfig);
   peerConnections.set(oderId, pc);
   
+  // Log connection state changes
+  pc.onconnectionstatechange = function() {
+    console.log('Connection state with', oderId, ':', pc.connectionState);
+  };
+  
+  pc.oniceconnectionstatechange = function() {
+    console.log('ICE connection state with', oderId, ':', pc.iceConnectionState);
+  };
+  
   // Add local stream tracks (audio)
   if (localStream) {
     localStream.getTracks().forEach(function(track) {
       pc.addTrack(track, localStream);
+      console.log('Added local track to peer', oderId, ':', track.kind);
     });
   }
   
@@ -3341,18 +3547,25 @@ function createPeerConnection(oderId) {
       audio.autoplay = true;
       audio.playsInline = true;
       audio.volume = 1.0;
+      audio.muted = false;
       document.body.appendChild(audio);
+      
+      console.log('Created audio element for:', oderId, 'stream:', event.streams[0]);
       
       // Force play with user interaction workaround
       var playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.then(function() {
-          console.log('Audio playing for:', oderId);
+          console.log('Audio playing for:', oderId, 'volume:', audio.volume, 'muted:', audio.muted);
         }).catch(function(err) {
-          console.error('Audio play error:', err);
+          console.error('Audio play error for', oderId, ':', err);
           // Try to play on next user interaction
           document.addEventListener('click', function playOnClick() {
-            audio.play();
+            audio.muted = false;
+            audio.volume = 1.0;
+            audio.play().then(function() {
+              console.log('Audio started after click for:', oderId);
+            });
             document.removeEventListener('click', playOnClick);
           }, { once: true });
         });
@@ -3451,12 +3664,18 @@ function createPeerConnection(oderId) {
       video.srcObject = event.streams[0];
       video.autoplay = true;
       video.playsInline = true;
+      video.muted = false;
       video.style.width = '100%';
       video.style.height = '100%';
       video.style.objectFit = 'contain';
       video.style.background = '#000';
       video.style.pointerEvents = 'none';
       video.style.flex = '1';
+      
+      // Force play video
+      video.play().catch(function(err) {
+        console.error('Video play error:', err);
+      });
       
       // Create resize handle
       var resizeHandle = document.createElement('div');
@@ -4242,17 +4461,20 @@ function showChannelContext(x, y, channelId, isVoice) {
 }
 
 function showMessageContext(x, y, msgId, msgText, isOwn, msgAuthor) {
+  hideContextMenu();
   var ctx = qS('#message-context');
   if (!ctx) return;
-  ctx.style.left = x + 'px';
-  ctx.style.top = y + 'px';
-  ctx.classList.add('visible');
+  
   ctx.dataset.msgId = msgId;
   ctx.dataset.msgText = msgText;
   ctx.dataset.msgAuthor = msgAuthor || '';
   ctx.dataset.isOwn = isOwn ? '1' : '0';
+  
   var delBtn = ctx.querySelector('[data-action="delete-message"]');
   if (delBtn) delBtn.style.display = isOwn ? 'flex' : 'none';
+  
+  positionContextMenu(ctx, x, y);
+  ctx.classList.add('visible');
 }
 
 function positionContextMenu(ctx, x, y) {
@@ -5263,48 +5485,88 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
   
-  // DM Call Chat Toggle - now just scrolls to chat below
-  var dmCallChatBtn = qS('#dm-call-chat-btn');
-  if (dmCallChatBtn) {
-    dmCallChatBtn.onclick = function() {
-      // Scroll to message input
-      var dmInput = qS('#dm-input');
-      if (dmInput) {
-        dmInput.focus();
-        dmInput.scrollIntoView({ behavior: 'smooth' });
+  // DM Call Noise Suppression
+  var dmCallNoiseBtn = qS('#dm-call-noise');
+  if (dmCallNoiseBtn) {
+    dmCallNoiseBtn.onclick = function() {
+      toggleDMCallNoiseSuppression();
+    };
+  }
+  
+  // DM Call Minimize
+  var dmCallMinimizeBtn = qS('#dm-call-minimize');
+  if (dmCallMinimizeBtn) {
+    dmCallMinimizeBtn.onclick = function() {
+      var callArea = qS('#dm-call-area');
+      if (callArea) {
+        callArea.classList.toggle('minimized');
       }
     };
   }
   
-  // DM Call Settings Toggle
-  var dmCallSettingsBtn = qS('#dm-call-settings-btn');
-  if (dmCallSettingsBtn) {
-    dmCallSettingsBtn.onclick = function() {
-      var settingsMenu = qS('#dm-call-settings-menu');
-      if (settingsMenu) {
-        settingsMenu.classList.toggle('active');
-        dmCallSettingsBtn.classList.toggle('active', settingsMenu.classList.contains('active'));
-        if (settingsMenu.classList.contains('active')) {
-          loadDMCallDevices();
+  // DM Call Mic Dropdown
+  var dmCallMicDropdown = qS('#dm-call-mic-dropdown');
+  if (dmCallMicDropdown) {
+    dmCallMicDropdown.onclick = function(e) {
+      e.stopPropagation();
+      closeAllDMCallMenus();
+      var menu = qS('#dm-call-mic-menu');
+      if (menu) {
+        menu.classList.toggle('active');
+        if (menu.classList.contains('active')) {
+          loadDMCallMicList();
         }
       }
     };
   }
   
-  // DM Call Device Selects
-  var dmCallMicSelect = qS('#dm-call-mic-select');
-  if (dmCallMicSelect) {
-    dmCallMicSelect.onchange = function() {
-      changeDMCallMic(this.value);
+  // DM Call Camera Dropdown
+  var dmCallVideoDropdown = qS('#dm-call-video-dropdown');
+  if (dmCallVideoDropdown) {
+    dmCallVideoDropdown.onclick = function(e) {
+      e.stopPropagation();
+      closeAllDMCallMenus();
+      var menu = qS('#dm-call-camera-menu');
+      if (menu) {
+        menu.classList.toggle('active');
+        if (menu.classList.contains('active')) {
+          loadDMCallCameraList();
+        }
+      }
     };
   }
   
-  var dmCallCameraSelect = qS('#dm-call-camera-select');
-  if (dmCallCameraSelect) {
-    dmCallCameraSelect.onchange = function() {
-      changeDMCallCamera(this.value);
+  // DM Call Speaker Dropdown
+  var dmCallSpeakerDropdown = qS('#dm-call-speaker-dropdown');
+  if (dmCallSpeakerDropdown) {
+    dmCallSpeakerDropdown.onclick = function(e) {
+      e.stopPropagation();
+      closeAllDMCallMenus();
+      var menu = qS('#dm-call-speaker-menu');
+      if (menu) {
+        menu.classList.toggle('active');
+        if (menu.classList.contains('active')) {
+          loadDMCallSpeakerList();
+        }
+      }
     };
   }
+  
+  // Volume slider
+  var volumeSlider = qS('#dm-call-volume-slider');
+  if (volumeSlider) {
+    volumeSlider.oninput = function() {
+      var audio = qS('#dm-call-audio');
+      if (audio) {
+        audio.volume = this.value / 100;
+      }
+    };
+  }
+  
+  // Close menus when clicking outside
+  document.addEventListener('click', function() {
+    closeAllDMCallMenus();
+  });
 
   
   // Create server
