@@ -2265,6 +2265,24 @@ const handlers = {
       type: 'dm_call_ended',
       from: userId
     });
+  },
+  
+  // DM Call Chat message
+  dm_call_chat(ws, data) {
+    const { to, text } = data;
+    const userId = ws.userId;
+    if (!userId || !to || !text) return;
+    
+    const user = users.get(userId);
+    const fromName = user ? user.name : 'Пользователь';
+    
+    // Send to peer
+    sendToUser(to, {
+      type: 'dm_call_chat',
+      from: userId,
+      fromName: fromName,
+      text: text
+    });
   }
 };
 

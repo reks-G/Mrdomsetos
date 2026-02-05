@@ -895,6 +895,19 @@ function handleMessage(msg) {
       closeModal('incoming-call-modal');
     },
     
+    dm_call_chat: function() {
+      // Incoming chat message during call
+      if (dmCallState.active && msg.from) {
+        addDMCallChatMessage(msg.fromName || 'Пользователь', msg.text, false);
+        // Open chat panel if not open
+        var chatPanel = qS('#dm-call-chat');
+        if (chatPanel && !chatPanel.classList.contains('active')) {
+          chatPanel.classList.add('active');
+          qS('#dm-call-chat-btn').classList.add('active');
+        }
+      }
+    },
+    
     search_results: function() {
       state.searchResults = msg.results;
       renderSearchResults();
@@ -2152,8 +2165,10 @@ var dmCallState = {
   peerConnection: null,
   localStream: null,
   remoteStream: null,
+  screenStream: null,
   isMuted: false,
   isVideoEnabled: false,
+  isScreenSharing: false,
   isIncoming: false,
   callTimer: null,
   callDuration: 0,
@@ -2896,6 +2911,12 @@ function endDMCall() {
     dmCallState.callTimer = null;
   }
   
+  // Stop screen share
+  if (dmCallState.screenStream) {
+    dmCallState.screenStream.getTracks().forEach(function(track) { track.stop(); });
+    dmCallState.screenStream = null;
+  }
+  
   // Stop local stream
   if (dmCallState.localStream) {
     dmCallState.localStream.getTracks().forEach(function(track) { track.stop(); });
@@ -2919,6 +2940,16 @@ function endDMCall() {
   if (remoteVideo) remoteVideo.srcObject = null;
   qS('#dm-call-video-container')?.classList.remove('active');
   
+  // Close chat and settings panels
+  var chatPanel = qS('#dm-call-chat');
+  var settingsPanel = qS('#dm-call-settings');
+  if (chatPanel) chatPanel.classList.remove('active');
+  if (settingsPanel) settingsPanel.classList.remove('active');
+  
+  // Clear chat messages
+  var chatMessages = qS('#dm-call-chat-messages');
+  if (chatMessages) chatMessages.innerHTML = '';
+  
   // Send end signal
   if (dmCallState.peerId) {
     send({ type: 'dm_call_end', to: dmCallState.peerId });
@@ -2930,6 +2961,7 @@ function endDMCall() {
   dmCallState.remoteStream = null;
   dmCallState.isMuted = false;
   dmCallState.isVideoEnabled = false;
+  dmCallState.isScreenSharing = false;
   dmCallState.isIncoming = false;
   dmCallState.callDuration = 0;
   
@@ -3007,6 +3039,213 @@ function toggleDMCallVideo() {
       qS('#dm-call-video-container').classList.add('active');
     }
   }
+}
+
+// DM Call Screen Share
+function toggleDMCallScreenShare() {
+  if (!dmCallState.active || !dmCallState.peerConnection) return;
+  
+  var screenBtn = qS('#dm-call-screen');
+  
+  if (dmCallState.isScreenSharing) {
+    // Stop screen share
+    if (dmCallState.screenStream) {
+      dmCallState.screenStream.getTracks().forEach(function(track) {
+        track.stop();
+      });
+      dmCallState.screenStream = null;
+    }
+    dmCallState.isScreenSharing = false;
+    if (screenBtn) screenBtn.classList.remove('active');
+    playScreenShareStop();
+    showNotification('Демонстрация экрана остановлена');
+  } else {
+    // Start screen share
+    navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(function(stream) {
+      dmCallState.screenStream = stream;
+      dmCallState.isScreenSharing = true;
+      
+      // Replace video track with screen track
+      var screenTrack = stream.getVideoTracks()[0];
+      var senders = dmCallState.peerConnection.getSenders();
+      var videoSender = senders.find(function(s) { return s.track && s.track.kind === 'video'; });
+      
+      if (videoSender) {
+        videoSender.replaceTrack(screenTrack);
+      } else {
+        dmCallState.peerConnection.addTrack(screenTrack, stream);
+      }
+      
+      // Show local screen in video
+      var localVideo = qS('#dm-local-video');
+      if (localVideo) localVideo.srcObject = stream;
+      qS('#dm-call-video-container').classList.add('active');
+      
+      if (screenBtn) screenBtn.classList.add('active');
+      playScreenShareStart();
+      
+      // Handle when user stops sharing via browser UI
+      screenTrack.onended = function() {
+        dmCallState.isScreenSharing = false;
+        dmCallState.screenStream = null;
+        if (screenBtn) screenBtn.classList.remove('active');
+        
+        // Restore camera if was enabled
+        if (dmCallState.localStream && dmCallState.isVideoEnabled) {
+          var camTrack = dmCallState.localStream.getVideoTracks()[0];
+          if (camTrack && videoSender) {
+            videoSender.replaceTrack(camTrack);
+          }
+          var localVideo = qS('#dm-local-video');
+          if (localVideo) localVideo.srcObject = dmCallState.localStream;
+        }
+        playScreenShareStop();
+      };
+    }).catch(function(err) {
+      console.error('Screen share error:', err);
+      showNotification('Не удалось начать демонстрацию экрана');
+    });
+  }
+}
+
+// DM Call Chat
+var dmCallChatMessages = [];
+
+function sendDMCallChatMessage() {
+  var input = qS('#dm-call-chat-input');
+  if (!input || !dmCallState.active || !dmCallState.peerId) return;
+  
+  var text = input.value.trim();
+  if (!text) return;
+  
+  // Send via WebSocket
+  send({
+    type: 'dm_call_chat',
+    to: dmCallState.peerId,
+    text: text
+  });
+  
+  // Add to local chat
+  addDMCallChatMessage(state.userName, text, true);
+  input.value = '';
+}
+
+function addDMCallChatMessage(author, text, isOwn) {
+  var container = qS('#dm-call-chat-messages');
+  if (!container) return;
+  
+  var msgDiv = document.createElement('div');
+  msgDiv.className = 'dm-call-chat-msg' + (isOwn ? ' own' : '');
+  msgDiv.innerHTML = '<div class="dm-call-chat-msg-author">' + escapeHtml(author) + '</div>' +
+    '<div class="dm-call-chat-msg-text">' + escapeHtml(text) + '</div>';
+  
+  container.appendChild(msgDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+// DM Call Settings - Load Devices
+function loadDMCallDevices() {
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    var micSelect = qS('#dm-call-mic-select');
+    var speakerSelect = qS('#dm-call-speaker-select');
+    var cameraSelect = qS('#dm-call-camera-select');
+    
+    if (micSelect) {
+      micSelect.innerHTML = '';
+      devices.filter(function(d) { return d.kind === 'audioinput'; }).forEach(function(device) {
+        var opt = document.createElement('option');
+        opt.value = device.deviceId;
+        opt.textContent = device.label || 'Микрофон ' + (micSelect.options.length + 1);
+        micSelect.appendChild(opt);
+      });
+    }
+    
+    if (speakerSelect) {
+      speakerSelect.innerHTML = '';
+      devices.filter(function(d) { return d.kind === 'audiooutput'; }).forEach(function(device) {
+        var opt = document.createElement('option');
+        opt.value = device.deviceId;
+        opt.textContent = device.label || 'Динамик ' + (speakerSelect.options.length + 1);
+        speakerSelect.appendChild(opt);
+      });
+    }
+    
+    if (cameraSelect) {
+      cameraSelect.innerHTML = '';
+      devices.filter(function(d) { return d.kind === 'videoinput'; }).forEach(function(device) {
+        var opt = document.createElement('option');
+        opt.value = device.deviceId;
+        opt.textContent = device.label || 'Камера ' + (cameraSelect.options.length + 1);
+        cameraSelect.appendChild(opt);
+      });
+    }
+  });
+}
+
+// Change DM Call Microphone
+function changeDMCallMic(deviceId) {
+  if (!dmCallState.localStream) return;
+  
+  navigator.mediaDevices.getUserMedia({
+    audio: { deviceId: { exact: deviceId } }
+  }).then(function(stream) {
+    var newTrack = stream.getAudioTracks()[0];
+    
+    // Replace in local stream
+    var oldTrack = dmCallState.localStream.getAudioTracks()[0];
+    if (oldTrack) {
+      dmCallState.localStream.removeTrack(oldTrack);
+      oldTrack.stop();
+    }
+    dmCallState.localStream.addTrack(newTrack);
+    
+    // Replace in peer connection
+    if (dmCallState.peerConnection) {
+      var sender = dmCallState.peerConnection.getSenders().find(function(s) {
+        return s.track && s.track.kind === 'audio';
+      });
+      if (sender) sender.replaceTrack(newTrack);
+    }
+    
+    showNotification('Микрофон изменён');
+  }).catch(function(err) {
+    showNotification('Не удалось сменить микрофон');
+  });
+}
+
+// Change DM Call Camera
+function changeDMCallCamera(deviceId) {
+  if (!dmCallState.localStream) return;
+  
+  navigator.mediaDevices.getUserMedia({
+    video: { deviceId: { exact: deviceId } }
+  }).then(function(stream) {
+    var newTrack = stream.getVideoTracks()[0];
+    
+    // Replace in local stream
+    var oldTrack = dmCallState.localStream.getVideoTracks()[0];
+    if (oldTrack) {
+      dmCallState.localStream.removeTrack(oldTrack);
+      oldTrack.stop();
+    }
+    dmCallState.localStream.addTrack(newTrack);
+    
+    // Update local video
+    var localVideo = qS('#dm-local-video');
+    if (localVideo) localVideo.srcObject = dmCallState.localStream;
+    
+    // Replace in peer connection
+    if (dmCallState.peerConnection) {
+      var sender = dmCallState.peerConnection.getSenders().find(function(s) {
+        return s.track && s.track.kind === 'video';
+      });
+      if (sender) sender.replaceTrack(newTrack);
+    }
+    
+    showNotification('Камера изменена');
+  }).catch(function(err) {
+    showNotification('Не удалось сменить камеру');
+  });
 }
 
 function showIncomingCall(fromId, fromName, fromAvatar, withVideo) {
@@ -4979,6 +5218,86 @@ document.addEventListener('DOMContentLoaded', function() {
         dmCallState.isVideoEnabled = false;
         closeModal('incoming-call-modal');
       }
+    };
+  }
+
+  // DM Call Screen Share
+  var dmCallScreenBtn = qS('#dm-call-screen');
+  if (dmCallScreenBtn) {
+    dmCallScreenBtn.onclick = function() {
+      toggleDMCallScreenShare();
+    };
+  }
+  
+  // DM Call Chat Toggle
+  var dmCallChatBtn = qS('#dm-call-chat-btn');
+  if (dmCallChatBtn) {
+    dmCallChatBtn.onclick = function() {
+      var chatPanel = qS('#dm-call-chat');
+      if (chatPanel) {
+        chatPanel.classList.toggle('active');
+        dmCallChatBtn.classList.toggle('active', chatPanel.classList.contains('active'));
+      }
+    };
+  }
+  
+  // DM Call Chat Close
+  var dmCallChatClose = qS('#dm-call-chat-close');
+  if (dmCallChatClose) {
+    dmCallChatClose.onclick = function() {
+      qS('#dm-call-chat').classList.remove('active');
+      qS('#dm-call-chat-btn').classList.remove('active');
+    };
+  }
+  
+  // DM Call Chat Send
+  var dmCallChatSend = qS('#dm-call-chat-send');
+  var dmCallChatInput = qS('#dm-call-chat-input');
+  if (dmCallChatSend && dmCallChatInput) {
+    dmCallChatSend.onclick = function() {
+      sendDMCallChatMessage();
+    };
+    dmCallChatInput.onkeypress = function(e) {
+      if (e.key === 'Enter') sendDMCallChatMessage();
+    };
+  }
+  
+  // DM Call Settings Toggle
+  var dmCallSettingsBtn = qS('#dm-call-settings-btn');
+  if (dmCallSettingsBtn) {
+    dmCallSettingsBtn.onclick = function() {
+      var settingsPanel = qS('#dm-call-settings');
+      if (settingsPanel) {
+        settingsPanel.classList.toggle('active');
+        dmCallSettingsBtn.classList.toggle('active', settingsPanel.classList.contains('active'));
+        if (settingsPanel.classList.contains('active')) {
+          loadDMCallDevices();
+        }
+      }
+    };
+  }
+  
+  // DM Call Settings Close
+  var dmCallSettingsClose = qS('#dm-call-settings-close');
+  if (dmCallSettingsClose) {
+    dmCallSettingsClose.onclick = function() {
+      qS('#dm-call-settings').classList.remove('active');
+      qS('#dm-call-settings-btn').classList.remove('active');
+    };
+  }
+  
+  // DM Call Device Selects
+  var dmCallMicSelect = qS('#dm-call-mic-select');
+  if (dmCallMicSelect) {
+    dmCallMicSelect.onchange = function() {
+      changeDMCallMic(this.value);
+    };
+  }
+  
+  var dmCallCameraSelect = qS('#dm-call-camera-select');
+  if (dmCallCameraSelect) {
+    dmCallCameraSelect.onchange = function() {
+      changeDMCallCamera(this.value);
     };
   }
 
