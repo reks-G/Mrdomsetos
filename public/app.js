@@ -117,6 +117,13 @@ function processAuthSuccess(msg) {
   if (msg.servers) {
     Object.values(msg.servers).forEach(function(srv) {
       state.servers.set(srv.id, srv);
+      
+      // Load voice users for each channel
+      if (srv.voiceUsers) {
+        Object.keys(srv.voiceUsers).forEach(function(channelId) {
+          state.voiceUsers.set(channelId, srv.voiceUsers[channelId]);
+        });
+      }
     });
   }
   

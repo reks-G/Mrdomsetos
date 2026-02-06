@@ -638,6 +638,15 @@ function getServersForUser(userId) {
   const result = {};
   servers.forEach((srv, id) => {
     if (srv.members.has(userId)) {
+      // Get voice users for each voice channel
+      const voiceUsers = {};
+      (srv.voiceChannels || []).forEach(vc => {
+        const users = getVoiceUsers(id, vc.id);
+        if (users.length > 0) {
+          voiceUsers[vc.id] = users;
+        }
+      });
+      
       result[id] = {
         id: srv.id,
         name: srv.name,
@@ -645,6 +654,7 @@ function getServersForUser(userId) {
         ownerId: srv.ownerId,
         channels: srv.channels || [],
         voiceChannels: srv.voiceChannels || [],
+        voiceUsers: voiceUsers,
         messages: srv.messages || {},
         members: [...srv.members],
         roles: srv.roles || [],
