@@ -686,6 +686,7 @@ function getVoiceUsers(serverId, channelId) {
       if (user) result.push({ id: oderId, oderId: oderId, ...user, muted: data.muted, video: data.video, screen: data.screen });
     }
   });
+  console.log('getVoiceUsers:', serverId, channelId, 'found:', result.length, 'users:', result.map(u => u.name));
   return result;
 }
 
@@ -1895,17 +1896,10 @@ const handlers = {
     }
     
     const users = getVoiceUsers(serverId, channelId);
+    console.log('voice_join:', userId, 'joined', channelId, 'users now:', users.map(u => u.name));
     
-    // Send to all users in server
+    // Send to all users in server (including the joining user)
     broadcastToServer(serverId, {
-      type: 'voice_state_update',
-      serverId,
-      channelId,
-      users
-    });
-    
-    // Also send directly to the joining user to ensure they get the update
-    send(ws, {
       type: 'voice_state_update',
       serverId,
       channelId,
