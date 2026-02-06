@@ -458,6 +458,14 @@ function handleMessage(msg) {
         if (!srv.messages[msg.channel]) srv.messages[msg.channel] = [];
         srv.messages[msg.channel].push(msg.message);
         if (state.currentServer === msg.serverId && state.currentChannel === msg.channel) {
+          // Remove pending messages from same author before adding real one
+          if (msg.message.authorId === state.userId) {
+            qSA('#messages .message.pending').forEach(function(el) {
+              if (el.dataset.authorId === state.userId) {
+                el.remove();
+              }
+            });
+          }
           appendMessage(msg.message);
         }
       }
@@ -969,9 +977,15 @@ function handleMessage(msg) {
 
 // ============ UI HELPERS ============
 function showView(id) {
+  console.log('showView called:', id);
   qSA('.main-view').forEach(function(v) { v.classList.remove('active'); });
   var el = document.getElementById(id);
-  if (el) el.classList.add('active');
+  if (el) {
+    el.classList.add('active');
+    console.log('View activated:', id);
+  } else {
+    console.error('View not found:', id);
+  }
 }
 
 function openModal(id) {
@@ -1381,11 +1395,20 @@ function renderDMList() {
 }
 
 function renderVoiceUsers(channelId, users) {
+  console.log('renderVoiceUsers called:', channelId, users);
   var vu = qS('#voice-users');
-  if (!vu) return;
+  if (!vu) {
+    console.error('voice-users element not found!');
+    return;
+  }
   
   // Only render if we're in this channel
-  if (state.voiceChannel !== channelId) return;
+  if (state.voiceChannel !== channelId) {
+    console.log('Not in this channel, skipping render');
+    return;
+  }
+  
+  console.log('Rendering', (users || []).length, 'users');
   
   // Save screen share if exists
   var screenShare = qS('#local-screen-preview-container');
@@ -2032,8 +2055,10 @@ function stopSpeakingDetection() {
 }
 
 function joinVoiceChannel(id) {
+  console.log('joinVoiceChannel called with id:', id);
   if (state.voiceChannel === id) {
     // Don't leave, just show voice view
+    console.log('Already in this channel, showing view');
     showView('voice-view');
     return;
   }
@@ -5380,6 +5405,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (state.replyingTo) {
       data.replyTo = { id: state.replyingTo.id, author: state.replyingTo.author, text: state.replyingTo.text, avatar: state.replyingTo.avatar };
     }
+    
+    // Optimistic update - show message immediately
+    var tempMsg = {
+      id: 'temp_' + Date.now(),
+      author: state.username,
+      authorId: state.userId,
+      avatar: state.userAvatar,
+      text: text,
+      time: Date.now(),
+      replyTo: data.replyTo || null,
+      pending: true
+    };
+    appendMessage(tempMsg);
+    
     send(data);
     input.value = '';
     hideReplyBar();
