@@ -2232,19 +2232,16 @@ var ringtoneAudio = null;
 // Preload ringtone on page load
 function preloadRingtone() {
   ringtoneAudio = new Audio();
-  // Discord-style ringtone
-  ringtoneAudio.src = 'https://cdn.discordapp.com/sounds/call_ringing_beat.ogg';
+  // Use a simple beep sound that works everywhere
+  // Generate a data URL for a simple tone
   ringtoneAudio.loop = true;
   ringtoneAudio.volume = 0.5;
-  ringtoneAudio.preload = 'auto';
   
-  ringtoneAudio.addEventListener('canplaythrough', function() {
-    console.log('Ringtone loaded successfully');
-  });
-  
-  ringtoneAudio.addEventListener('error', function(e) {
-    console.error('Ringtone load error:', e);
-  });
+  // Try to load from a working source, fallback to Web Audio
+  ringtoneAudio.onerror = function() {
+    console.log('Ringtone file failed to load, will use Web Audio fallback');
+    ringtoneAudio = null;
+  };
 }
 
 // Fallback ringtone using Web Audio API
@@ -2282,40 +2279,18 @@ function playRingtoneFallback() {
   }
 }
 
-// Musical ringtone - using audio file
+// Ringtone using Web Audio API
 function playRingtone() {
   stopAllCallSounds();
   console.log('Playing ringtone...');
-  
-  if (!ringtoneAudio) {
-    preloadRingtone();
-  }
-  
-  ringtoneAudio.currentTime = 0;
-  ringtoneAudio.play().then(function() {
-    console.log('Ringtone playing!');
-  }).catch(function(e) {
-    console.error('Ringtone play error, using fallback:', e);
-    playRingtoneFallback();
-  });
+  playRingtoneFallback();
 }
 
-// Dialing tone - same music as ringtone
+// Dialing tone using Web Audio API
 function playDialingTone() {
   stopAllCallSounds();
   console.log('Playing dialing tone...');
-  
-  if (!ringtoneAudio) {
-    preloadRingtone();
-  }
-  
-  ringtoneAudio.currentTime = 0;
-  ringtoneAudio.play().then(function() {
-    console.log('Dialing tone playing!');
-  }).catch(function(e) {
-    console.error('Dialing tone play error, using fallback:', e);
-    playRingtoneFallback();
-  });
+  playRingtoneFallback();
 }
 
 // Call connected - pleasant chime
